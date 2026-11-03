@@ -1,0 +1,19 @@
+{
+  "name": "@aye/schema",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Ay\u00e9 domain model: Zod schemas are the single source of truth for every persisted or transmitted shape.",
+  "exports": {
+    ".": "./src/index.ts",
+    "./fixtures": "./src/fixtures.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc -p .",
+    "test": "vitest run",
+    "jsonschema": "node scripts/emit-json-schema.ts"
+  },
+  "dependencies": {
+    "zod": "catalog:"
+  }
+}

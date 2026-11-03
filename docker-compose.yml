@@ -1,0 +1,22 @@
+# Local development only. Credentials come from .env (gitignored); copy .env.example to start.
+services:
+  postgres:
+    # Multi-arch (amd64 + arm64) build of the official PostGIS image; postgis/postgis is amd64-only.
+    image: imresamu/postgis:18-3.6
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:?set POSTGRES_USER in .env}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: ${POSTGRES_DB:-aye}
+    ports:
+      # Loopback only: never expose the dev database on the network.
+      - "127.0.0.1:${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER}"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+volumes:
+  pgdata:

@@ -1,0 +1,26 @@
+{
+  "name": "@aye/db",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Postgres (PostGIS) schema, migrations and the actor-scoped data access layer.",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc -p .",
+    "test": "vitest run",
+    "generate": "drizzle-kit generate",
+    "migrate": "drizzle-kit migrate"
+  },
+  "dependencies": {
+    "@aye/schema": "workspace:*",
+    "drizzle-orm": "catalog:",
+    "postgres": "catalog:",
+    "@aye/artifacts": "workspace:*",
+    "zod": "catalog:"
+  },
+  "devDependencies": {
+    "drizzle-kit": "catalog:"
+  }
+}

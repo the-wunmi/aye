@@ -1,0 +1,83 @@
+{
+  "version": "7",
+  "dialect": "postgresql",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "7",
+      "when": 1793056497582,
+      "tag": "0000_postgis",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1793056498221,
+      "tag": "0001_init",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1793082630358,
+      "tag": "0002_house_rules",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1793090178426,
+      "tag": "0003_drop_house_rules",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1793090179335,
+      "tag": "0004_world_specs",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1793093174452,
+      "tag": "0005_cities_step1",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1793093175354,
+      "tag": "0006_cities_step2",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1793565896741,
+      "tag": "0007_known_iceman",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1793567600441,
+      "tag": "0008_daily_gravity",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1793567995455,
+      "tag": "0009_famous_vivisector",
+      "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1793617323314,
+      "tag": "0010_heavy_vargas",
+      "breakpoints": true
+    }
+  ]
+}

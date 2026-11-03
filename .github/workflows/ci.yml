@@ -1,0 +1,40 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+      - uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v4.4.0
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+
+      # Ephemeral PostGIS with a password generated for this run only: no secret in the repo.
+      - name: Start PostGIS
+        run: |
+          PW="$(openssl rand -hex 24)"
+          echo "::add-mask::$PW"
+          docker run -d --name pg -p 127.0.0.1:5432:5432 \
+            -e POSTGRES_USER=aye -e POSTGRES_PASSWORD="$PW" -e POSTGRES_DB=aye \
+            imresamu/postgis:18-3.6
+          for i in $(seq 1 60); do docker exec pg pg_isready -U aye && break; sleep 1; done
+          echo "DATABASE_URL=postgres://aye:$PW@127.0.0.1:5432/aye" >> "$GITHUB_ENV"
+
+      - run: pnpm verify
+      - run: pnpm --filter @aye/web build

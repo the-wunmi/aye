@@ -1,0 +1,19 @@
+{
+  "name": "@aye/artifacts",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Content addressing: canonical JSON, BLAKE3 hashing, recipe keys, deterministic ids, artifact stores.",
+  "exports": {
+    ".": "./src/index.ts",
+    "./node": "./src/node.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc -p .",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@aye/schema": "workspace:*",
+    "@noble/hashes": "catalog:"
+  }
+}

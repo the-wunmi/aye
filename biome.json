@@ -1,0 +1,74 @@
+{
+  "$schema": "https://biomejs.dev/schemas/2.6.3/schema.json",
+  "vcs": {
+    "enabled": true,
+    "clientKind": "git",
+    "useIgnoreFile": true
+  },
+  "files": {
+    "includes": [
+      "**",
+      "!**/dist",
+      "!**/.turbo",
+      "!**/drizzle/meta",
+      "!**/routeTree.gen.ts",
+      "!.aye",
+      "!pnpm-lock.yaml"
+    ]
+  },
+  "formatter": {
+    "enabled": true,
+    "indentStyle": "space",
+    "indentWidth": 2,
+    "lineWidth": 100
+  },
+  "javascript": {
+    "formatter": {
+      "quoteStyle": "double",
+      "semicolons": "always",
+      "trailingCommas": "all"
+    }
+  },
+  "assist": {
+    "actions": {
+      "source": {
+        "organizeImports": "on"
+      }
+    }
+  },
+  "linter": {
+    "enabled": true,
+    "rules": {
+      "preset": "recommended",
+      "correctness": {
+        "noUnusedImports": "error",
+        "noUnusedVariables": "error",
+        "useHookAtTopLevel": "error"
+      },
+      "style": {
+        "useImportType": "error",
+        "useExportType": "error",
+        "noNonNullAssertion": "warn",
+        "useConst": "error"
+      },
+      "suspicious": {
+        "noExplicitAny": "error"
+      },
+      "complexity": {
+        "useLiteralKeys": "off"
+      }
+    }
+  },
+  "overrides": [
+    {
+      "includes": ["**/test/**"],
+      "linter": {
+        "rules": {
+          "style": {
+            "noNonNullAssertion": "off"
+          }
+        }
+      }
+    }
+  ]
+}

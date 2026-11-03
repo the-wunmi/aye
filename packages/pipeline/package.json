@@ -1,0 +1,26 @@
+{
+  "name": "@aye/pipeline",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Capture \u2192 scene compiler. Memoised, content-addressed stages over pluggable model providers.",
+  "exports": {
+    ".": "./src/index.ts",
+    "./fake": "./src/fake.ts",
+    "./node": "./src/node.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc -p .",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@aye/artifacts": "workspace:*",
+    "@aye/schema": "workspace:*",
+    "@aye/sim": "workspace:*",
+    "@gltf-transform/core": "catalog:",
+    "@gltf-transform/extensions": "catalog:",
+    "meshoptimizer": "catalog:",
+    "undici": "catalog:",
+    "zod": "catalog:"
+  }
+}

@@ -1,0 +1,20 @@
+node_modules/
+dist/
+.turbo/
+coverage/
+*.tsbuildinfo
+.env
+.env.*
+!.env.example
+.DS_Store
+
+# Local content-addressed artifact store (dev)
+.aye/
+
+
+# Asset library files (fetched: pnpm library:fetch)
+# Fetched by `pnpm library:fetch`, except the shared animations: their source is a drive
+# link that often refuses downloads, so the pinned file is kept here.
+apps/web/public/library/**
+!apps/web/public/library/outfits/
+!apps/web/public/library/outfits/animations.glb

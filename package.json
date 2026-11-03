@@ -1,0 +1,29 @@
+{
+  "name": "aye",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@11.24.0",
+  "engines": {
+    "node": ">=24.11"
+  },
+  "scripts": {
+    "dev": "turbo run dev",
+    "build": "turbo run build",
+    "typecheck": "turbo run typecheck",
+    "test": "turbo run test",
+    "check": "biome check .",
+    "fix": "biome check --write .",
+    "verify": "node scripts/check-source.ts && biome check . && turbo run typecheck test",
+    "db:up": "docker compose up -d postgres",
+    "db:down": "docker compose down",
+    "check:source": "node scripts/check-source.ts",
+    "library:fetch": "node packages/engine/scripts/fetch-library.ts"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "catalog:",
+    "@types/node": "catalog:",
+    "turbo": "catalog:",
+    "typescript": "catalog:",
+    "vitest": "catalog:"
+  }
+}

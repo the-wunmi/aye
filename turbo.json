@@ -1,0 +1,23 @@
+{
+  "$schema": "https://turborepo.com/schema.json",
+  "ui": "stream",
+  "tasks": {
+    "typecheck": {
+      "dependsOn": ["^typecheck"],
+      "inputs": ["src/**", "test/**", "tsconfig.json", "package.json"]
+    },
+    "test": {
+      "dependsOn": ["^typecheck"],
+      "inputs": ["src/**", "test/**", "package.json"],
+      "env": ["DATABASE_URL", "MUSE_API_KEY", "MUSE_BASE_URL", "MUSE_TEXT_MODEL", "MUSE_EFFORT"]
+    },
+    "build": {
+      "dependsOn": ["^build"],
+      "outputs": ["dist/**"]
+    },
+    "dev": {
+      "cache": false,
+      "persistent": true
+    }
+  }
+}

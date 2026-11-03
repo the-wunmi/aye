@@ -1,0 +1,30 @@
+{
+  "name": "@aye/api",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "node --watch --env-file-if-exists=../../.env src/main.ts",
+    "start": "node src/main.ts",
+    "typecheck": "tsc -p .",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@aye/artifacts": "workspace:*",
+    "@aye/db": "workspace:*",
+    "@aye/schema": "workspace:*",
+    "@aye/sim": "workspace:*",
+    "@hono/node-server": "catalog:",
+    "hono": "catalog:",
+    "zod": "catalog:",
+    "drizzle-orm": "catalog:",
+    "ws": "catalog:",
+    "@aye/worker": "workspace:*",
+    "@dbos-inc/dbos-sdk": "catalog:"
+  },
+  "devDependencies": {
+    "postgres": "catalog:",
+    "@aye/artifacts": "workspace:*",
+    "@types/ws": "catalog:"
+  }
+}

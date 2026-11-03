@@ -1,0 +1,29 @@
+{
+  "name": "@aye/engine",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Browser runtime: WebGPU renderers (a place, the city map) and the realm connection.",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc -p .",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@aye/schema": "workspace:*",
+    "@aye/sim": "workspace:*",
+    "three": "catalog:",
+    "zod": "catalog:"
+  },
+  "devDependencies": {
+    "@gltf-transform/core": "catalog:",
+    "@gltf-transform/extensions": "catalog:",
+    "@types/pngjs": "catalog:",
+    "@types/three": "catalog:",
+    "jpeg-js": "catalog:",
+    "meshoptimizer": "catalog:",
+    "pngjs": "catalog:"
+  }
+}

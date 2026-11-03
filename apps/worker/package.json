@@ -1,0 +1,32 @@
+{
+  "name": "@aye/worker",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Durable capture-compile workflows (DBOS on Postgres).",
+  "scripts": {
+    "dev": "node --watch --env-file-if-exists=../../.env src/main.ts",
+    "start": "node src/main.ts",
+    "typecheck": "tsc -p .",
+    "test": "vitest run",
+    "refinish": "node --env-file-if-exists=../../.env scripts/refinish.ts",
+    "furnish": "node --env-file-if-exists=../../.env scripts/furnish.ts",
+    "arrange": "node --env-file=../../.env scripts/arrange.ts"
+  },
+  "dependencies": {
+    "@aye/artifacts": "workspace:*",
+    "@aye/db": "workspace:*",
+    "@aye/pipeline": "workspace:*",
+    "@aye/schema": "workspace:*",
+    "@aye/sim": "workspace:*",
+    "zod": "catalog:",
+    "@dbos-inc/dbos-sdk": "catalog:"
+  },
+  "devDependencies": {
+    "postgres": "catalog:",
+    "drizzle-orm": "catalog:"
+  },
+  "exports": {
+    "./jobs": "./src/workflows.ts"
+  }
+}

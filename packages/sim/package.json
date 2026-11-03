@@ -1,0 +1,17 @@
+{
+  "name": "@aye/sim",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Deterministic life simulation: navigation, needs, economy, utilities, accessibility analysis. No DOM, no I/O.",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc -p .",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@aye/schema": "workspace:*"
+  }
+}
