@@ -129,7 +129,12 @@ describe.skipIf(!url)("the game", () => {
     await migrate(db, {
       migrationsFolder: fileURLToPath(new URL("../../../packages/db/drizzle", import.meta.url)),
     });
-    const env = loadEnv({ NODE_ENV: "test", DATABASE_URL: testUrl.toString(), WEB_ORIGIN: ORIGIN });
+    const env = loadEnv({
+      ALLOW_ANONYMOUS: "1",
+      NODE_ENV: "test",
+      DATABASE_URL: testUrl.toString(),
+      WEB_ORIGIN: ORIGIN,
+    });
     content = contentLoader(store);
     const app = createApp({
       env,
@@ -225,6 +230,26 @@ describe.skipIf(!url)("the game", () => {
         if (r.said.includes("anyone home")) {
           return { person: who, name: "Someone", text: `Welcome, ${r.playerName}!` };
         }
+        if (r.said.includes("get a snack")) {
+          return {
+            person: who,
+            name: "Someone",
+            text: "Going now.",
+            does: { kind: "fridge", action: "snack", label: "Grab a snack" },
+          };
+        }
+        if (r.said.includes("join in")) {
+          return {
+            person: who,
+            name: "Someone",
+            text: "Right.",
+            does: { kind: "no_such_kind", action: "nope", label: "Nothing real" },
+            alsoSaid: [
+              { person: who, name: "Someone", text: "And another thing." },
+              { person: "not_here", name: "Nobody", text: "I'm not here." },
+            ],
+          };
+        }
         // Offers: one the place really has, and one it doesn't.
         if (r.said.includes("hungry")) {
           return {
@@ -272,7 +297,7 @@ describe.skipIf(!url)("the game", () => {
       expect(cookie).toMatch(/SameSite=Lax/i);
       cookies[handle] = cookie.split(";")[0] as string;
     }
-    expect(await (await call("alice", "/me")).json()).toEqual({ handle: "alice" });
+    expect(await (await call("alice", "/me")).json()).toEqual({ handle: "alice", guest: false });
     expect((await call(null, "/me")).status).toBe(401);
     expect(
       (await post(null, "/auth/register", { handle: "ALICE", password: "another-password" }))
@@ -734,6 +759,115 @@ describe.skipIf(!url)("the game", () => {
     expect(await u.piece("usr_a", good, 0, bytes, "video/mp4")).toBe("ok");
   });
 
+  it("lets guests play, keeps spending for accounts, and lets them claim one", async () => {
+    const res = await post(null, "/auth/guest", {});
+    expect(res.status).toBe(201);
+    const cookie = (res.headers.get("set-cookie") as string).split(";")[0] as string;
+    expect(res.headers.get("set-cookie")).toContain("HttpOnly");
+    cookies["guesty"] = cookie;
+    const me = (await (await call("guesty", "/me")).json()) as { handle: string; guest: boolean };
+    expect(me.guest).toBe(true);
+    // They can join and read what's open to anyone.
+    expect((await post("guesty", `/worlds/${worldId}/join`, {})).status).toBe(200);
+    expect((await call("guesty", `/worlds/${worldId}/city`)).status).toBe(200);
+    // Nothing that spends model credit.
+    const denied = await post("guesty", "/worlds", {
+      description: "A guest trying to build a whole city",
+      visibility: "private",
+    });
+    expect(denied.status).toBe(403);
+    expect(await denied.json()).toEqual({ error: "account_needed" });
+    const place = "mama_s_spot";
+    expect(
+      (
+        await post("guesty", `/worlds/${worldId}/places/${place}/questions`, {
+          question: "Could I reach this?",
+        })
+      ).status,
+    ).toBe(403);
+    expect(
+      (await post("guesty", `/worlds/${worldId}/places/${place}/ask`, { thing: "x", said: "y" }))
+        .status,
+    ).toBe(403);
+    expect((await post("guesty", `/worlds/${worldId}/home`, { wish: "more light" })).status).toBe(
+      403,
+    );
+    expect(
+      (
+        await call("guesty", `/worlds/${worldId}/captures/pieces?upload=abcdef0123456789&index=0`, {
+          method: "POST",
+          headers: { "content-type": "video/mp4" },
+          body: "aaa",
+        })
+      ).status,
+    ).toBe(403);
+    expect(
+      (await post("guesty", `/worlds/${worldId}/captures?upload=abcdef0123456789`, {})).status,
+    ).toBe(403);
+    // A guest can't log in, whatever's sent.
+    expect(
+      (await post(null, "/auth/login", { handle: me.handle, password: "anything-at-all" })).status,
+    ).toBe(401);
+    // Claiming: malformed, signed out and a taken name refused.
+    expect((await post("guesty", "/auth/claim", { handle: "x", password: "y" })).status).toBe(400);
+    expect(
+      (
+        await post("guesty", "/auth/claim", {
+          handle: "ok_name",
+          password: "long-enough-pass",
+          admin: true,
+        })
+      ).status,
+    ).toBe(400);
+    expect(
+      (await post(null, "/auth/claim", { handle: "ok_name", password: "long-enough-pass" })).status,
+    ).toBe(401);
+    expect(
+      (await post("guesty", "/auth/claim", { handle: "ALICE", password: "long-enough-pass" }))
+        .status,
+    ).toBe(409);
+    // Someone who already has an account can't overwrite it this way.
+    expect(
+      (await post("alice", "/auth/claim", { handle: "alice2", password: "long-enough-pass" }))
+        .status,
+    ).toBe(404);
+    // Theirs now: the same session is a real account, and they can log in with it.
+    expect(
+      (await post("guesty", "/auth/claim", { handle: "was_guest", password: "long-enough-pass" }))
+        .status,
+    ).toBe(200);
+    expect(await (await call("guesty", "/me")).json()).toEqual({
+      handle: "was_guest",
+      guest: false,
+    });
+    expect(
+      (await post(null, "/auth/login", { handle: "was_guest", password: "long-enough-pass" }))
+        .status,
+    ).toBe(200);
+    expect(
+      (await post("guesty", "/auth/claim", { handle: "again_now", password: "long-enough-pass" }))
+        .status,
+    ).toBe(404);
+    expect((await call("guesty", `/worlds/${worldId}/city`)).status).toBe(200);
+  });
+
+  it("has no guests where they aren't allowed", async () => {
+    const off = createApp({
+      env: loadEnv({ NODE_ENV: "test", DATABASE_URL: url as string, WEB_ORIGIN: ORIGIN }),
+      db,
+      store,
+      content,
+      enqueueCity: async () => undefined,
+      enqueueCapture: async () => undefined,
+    } as never);
+    const res = await off.request("/auth/guest", {
+      method: "POST",
+      headers: { "content-type": "application/json", origin: ORIGIN },
+      body: "{}",
+    });
+    expect(res.status).toBe(404);
+  });
+
   it("shows finished public cities to anyone, and nothing more about them", async () => {
     const res = await call(null, "/open-cities");
     expect(res.status).toBe(200);
@@ -1007,6 +1141,24 @@ describe.skipIf(!url)("the game", () => {
     expect(asked?.present).not.toContain(aliceKey);
     expect(answered.line.agent).not.toBe(aliceKey);
     expect(asked?.recent.some((l) => l.text === "hello Bayo")).toBe(true);
+
+    // Others can join in, but only people who are here; something unreal is simply not done.
+    bob.send({ t: "say", text: "join in please" });
+    await bob.next("said", (m) => m.line.text === "Right.");
+    const joined = await bob.next("said", (m) => m.line.text === "And another thing.");
+    expect(joined.line.from).toBe("Someone");
+    // Asked to do something real, one of the world's people sets off to do it.
+    bob.send({ t: "say", text: "please get a snack" });
+    await bob.next("said", (m) => m.line.text === "Going now.");
+    await bob.next("snap", (m) => m.doing.includes("Grab a snack"));
+
+    let strangerSpoke = false;
+    alice.send({ t: "say", text: "next up" });
+    await bob.next("said", (m) => {
+      strangerSpoke ||= m.line.text === "I'm not here.";
+      return m.line.text === "next up";
+    });
+    expect(strangerSpoke).toBe(false);
 
     // An offer of something really on offer here: a button for whoever asked, nobody else.
     alice.send({ t: "say", text: "I'm hungry" });

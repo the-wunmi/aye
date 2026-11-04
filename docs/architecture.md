@@ -226,6 +226,11 @@ over); players see it without reconnecting.
 - **Abuse.** Messages are capped at 2 KB, schema-checked and rate-limited (token buckets),
   with strikes for junk; commands per room per tick are capped; slow sockets skip snapshots.
 
+People in a place speak through one memoised stage (`pipeline/src/converse.ts`): they answer a
+player, others may join in, and after a quiet spell with an active player present they may talk
+among themselves. What a speaker goes and does is a label from the place's own actions, which
+code resolves to a `use` command the sim can still refuse, so a model never moves anyone directly.
+
 ## Determinism
 
 **Generation:** a stage's `Recipe` = {stage, stageVersion, model ref with immutable version,

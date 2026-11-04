@@ -31,6 +31,11 @@ const Env = z
      * Refused in production so it can never become a backdoor.
      */
     AYE_DEV_AUTH: z.enum(["0", "1"]).default("0"),
+    /**
+     * Lets people play without signing up, as guests. They can't spend model credit until they
+     * add a name and password. Off unless this deployment says so.
+     */
+    ALLOW_ANONYMOUS: z.enum(["0", "1"]).default("0"),
     /** For speech to text only (voices aren't kept, so this can't go through the worker). */
     MUSE_API_KEY: z.string().min(16).optional(),
   })

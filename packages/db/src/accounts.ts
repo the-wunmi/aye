@@ -11,7 +11,7 @@
  */
 import { createHash, randomBytes, scrypt as scryptCb, timingSafeEqual } from "node:crypto";
 import type { UserId } from "@aye/schema";
-import { and, eq, gt, sql } from "drizzle-orm";
+import { and, eq, gt, isNull, ne, sql } from "drizzle-orm";
 import { z } from "zod";
 import type { Db } from "./client.ts";
 import type { Actor } from "./policy.ts";
@@ -78,6 +78,53 @@ export async function registerUser(
     .onConflictDoNothing()
     .returning({ id: users.id });
   return rows[0] ? { ok: true, userId: rows[0].id as UserId } : { ok: false, reason: "taken" };
+}
+
+/**
+ * Someone playing without signing up: a real account in every way, except nobody can log in to it,
+ * so it lasts only as long as its session unless they claim it.
+ */
+export async function createGuest(db: Db, id: UserId): Promise<{ handle: string }> {
+  const handle = `guest_${randomBytes(6).toString("hex")}`;
+  await db.insert(users).values({ id, handle, passwordHash: null });
+  return { handle };
+}
+
+/** No password yet means a guest. */
+export async function isGuest(db: Db, userId: UserId): Promise<boolean> {
+  const [row] = await db
+    .select({ id: users.id })
+    .from(users)
+    .where(and(eq(users.id, userId), isNull(users.passwordHash)))
+    .limit(1);
+  return Boolean(row);
+}
+
+/** A guest takes a name and password, keeping all they have. Only ever their own, and only once. */
+export async function claimGuest(
+  db: Db,
+  userId: UserId,
+  input: { handle: string; password: string },
+): Promise<"ok" | "taken" | "not_a_guest"> {
+  const handle = Handle.parse(input.handle);
+  const passwordHash = await hashPassword(Password.parse(input.password));
+  const [clash] = await db
+    .select({ id: users.id })
+    .from(users)
+    .where(and(eq(sql`lower(${users.handle})`, handle.toLowerCase()), ne(users.id, userId)))
+    .limit(1);
+  if (clash) return "taken";
+  try {
+    const rows = await db
+      .update(users)
+      .set({ handle, passwordHash })
+      .where(and(eq(users.id, userId), isNull(users.passwordHash)))
+      .returning({ id: users.id });
+    return rows[0] ? "ok" : "not_a_guest";
+  } catch {
+    // Someone took the name between the check and now: the unique index said no.
+    return "taken";
+  }
 }
 
 /** The user for a handle and password, or null. Same cost whether or not the handle exists. */

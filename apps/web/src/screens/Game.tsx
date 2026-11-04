@@ -35,6 +35,7 @@ import { useLand, useNetwork } from "../game/useNetwork.ts";
 import { usePlan } from "../game/usePlan.ts";
 import { whyNot } from "../game/why-not.ts";
 import { pathOf } from "../route.ts";
+import { SaveAccount } from "./SaveAccount.tsx";
 
 type AskStatus =
   | { status: "working" }
@@ -57,11 +58,33 @@ const seenTour = (worldId: string) => {
   }
 };
 
+/** Filming, building and asking need an account; the offer sits where those would be. */
+function GuestNudge({ onSaved }: { onSaved(handle: string): void }) {
+  const [open, setOpen] = useState(false);
+  return open ? (
+    <div className="w w-card film-card">
+      <SaveAccount
+        why="Add a name and password to film places, ask the world and make your home yours. You keep everything."
+        onSaved={onSaved}
+      />
+      <button type="button" className="link" onClick={() => setOpen(false)}>
+        Not now
+      </button>
+    </div>
+  ) : (
+    <button type="button" className="sys-pill" onClick={() => setOpen(true)}>
+      Save your account
+    </button>
+  );
+}
+
 export function Game({
   worldId,
   bundle: initial,
   character,
   handle,
+  guest,
+  onSaved,
   startFilming,
   openPlace,
   onLeave,
@@ -71,6 +94,9 @@ export function Game({
   bundle: CityBundle;
   character: Character;
   handle: string;
+  /** Playing without an account: what spends model credit asks for one first. */
+  guest?: boolean;
+  onSaved?(handle: string): void;
   /** They came here to film something: open that straight away. */
   startFilming?: boolean;
   /** A link named somewhere: show it, and they go there the usual way if they want to. */
@@ -840,7 +866,9 @@ export function Game({
               )}
             </button>
           ),
-          top_right: planning ? null : (
+          top_right: planning ? null : guest ? (
+            <GuestNudge onSaved={(h) => onSaved?.(h)} />
+          ) : (
             <FilmPlace
               worldId={worldId}
               cityName={city.name}
@@ -865,7 +893,8 @@ export function Game({
           ),
           right: (
             <>
-              {view === "place" &&
+              {!guest &&
+                view === "place" &&
                 state.place &&
                 city.starts.find((s) => s.key === character.start)?.home === state.place.key && (
                   <MakeYours
@@ -878,21 +907,23 @@ export function Game({
                     buy={(job) => send({ t: "buy_home", job })}
                   />
                 )}
-              <AskPlace
-                worldId={worldId}
-                here={view === "place" ? placeKey : null}
-                placeName={placesOf(city).find((p) => p.key === placeKey)?.name ?? ""}
-                scene={view === "place" ? (state.place?.scene ?? null) : null}
-                suggestions={Object.entries(
-                  city.items.find((i) => i.key === placeKey)?.attrs ?? {},
-                ).flatMap(([k, v]) => (k.startsWith("ask_") && typeof v === "string" ? [v] : []))}
-                onMarks={setMarks}
-                onShow={(m) => {
-                  // Leaving follow view frames the whole place, on the next render: then turn it.
-                  setFollow(false);
-                  setTimeout(() => camera.current?.showSpot(m.xMm, m.zMm), 80);
-                }}
-              />
+              {!guest && (
+                <AskPlace
+                  worldId={worldId}
+                  here={view === "place" ? placeKey : null}
+                  placeName={placesOf(city).find((p) => p.key === placeKey)?.name ?? ""}
+                  scene={view === "place" ? (state.place?.scene ?? null) : null}
+                  suggestions={Object.entries(
+                    city.items.find((i) => i.key === placeKey)?.attrs ?? {},
+                  ).flatMap(([k, v]) => (k.startsWith("ask_") && typeof v === "string" ? [v] : []))}
+                  onMarks={setMarks}
+                  onShow={(m) => {
+                    // Leaving follow view frames the whole place, on the next render: then turn it.
+                    setFollow(false);
+                    setTimeout(() => camera.current?.showSpot(m.xMm, m.zMm), 80);
+                  }}
+                />
+              )}
             </>
           ),
           ...(view === "place" && state.place

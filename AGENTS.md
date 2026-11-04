@@ -145,6 +145,8 @@ Same scene + world spec + settings + command log ⇒ same `Sim.hash()` on every 
 - Identity is a session: HttpOnly, SameSite=Lax cookies (Secure in production) holding a random
   token; only its SHA-256 is stored. Passwords are scrypt-hashed and never logged or returned.
   `accounts.ts` is the only code that turns credentials into an `Actor`.
+- Guests (`ALLOW_ANONYMOUS=1`) are accounts with no password. Anything that spends model credit
+  takes `accountOnly`, so nobody can run up costs with endless guests.
 - A character belongs to one player; only they read or save it. Private places (a home) are a
   room per player; their chat is the owner's alone.
 

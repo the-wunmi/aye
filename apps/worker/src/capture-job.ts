@@ -158,6 +158,47 @@ export async function runCaptureJob(
     );
     finished.frames = layout.frames;
 
+    // Where it goes takes only what was filmed, so it needn't hold up everything else.
+    const joining = step(
+      "join",
+      async (): Promise<Item | null> => {
+        const scene = Scene.parse(await readJson(deps.store, layout.sceneRef));
+        const xs = scene.levels.flatMap((l) => l.footprint.map((p) => p[0]));
+        const zs = scene.levels.flatMap((l) => l.footprint.map((p) => p[1]));
+        const joined = await joinCity(
+          {
+            city: `${city.name}: ${city.tagline}`,
+            kinds: joinableKinds(city).map((k) => ({
+              name: k.name,
+              about: k.about,
+              tags: k.traits.place?.tags ?? [],
+            })),
+            place: {
+              name: layout.place.name,
+              summary: layout.place.summary,
+              things: scene.objects.map((o) => o.label).slice(0, 40),
+            },
+            note: job.note,
+          },
+          city,
+          {
+            captureId: job.captureId,
+            ...(job.note.trim() && job.note.length <= NAME_CHARS ? { calledIt: job.note } : {}),
+            at: job.at,
+            footprintM: [
+              (Math.max(...xs) - Math.min(...xs)) / 1000,
+              (Math.max(...zs) - Math.min(...zs)) / 1000,
+            ],
+            build: layout.place.summary,
+          },
+          { joiner: deps.providers.joiner, store: deps.store, index, signal: deps.signal },
+        );
+        return joined?.item ?? null;
+      },
+      { retries: 3 },
+    );
+    joining.catch(() => undefined);
+
     await phase("writing");
     const written = await step(
       "world",
@@ -257,45 +298,7 @@ export async function runCaptureJob(
       { retries: 2 },
     );
 
-    await phase("joining");
-    const item = await step(
-      "join",
-      async (): Promise<Item | null> => {
-        const scene = Scene.parse(await readJson(deps.store, layout.sceneRef));
-        const xs = scene.levels.flatMap((l) => l.footprint.map((p) => p[0]));
-        const zs = scene.levels.flatMap((l) => l.footprint.map((p) => p[1]));
-        const joined = await joinCity(
-          {
-            city: `${city.name}: ${city.tagline}`,
-            kinds: joinableKinds(city).map((k) => ({
-              name: k.name,
-              about: k.about,
-              tags: k.traits.place?.tags ?? [],
-            })),
-            place: {
-              name: layout.place.name,
-              summary: layout.place.summary,
-              things: scene.objects.map((o) => o.label).slice(0, 40),
-            },
-            note: job.note,
-          },
-          city,
-          {
-            captureId: job.captureId,
-            ...(job.note.trim() && job.note.length <= NAME_CHARS ? { calledIt: job.note } : {}),
-            at: job.at,
-            footprintM: [
-              (Math.max(...xs) - Math.min(...xs)) / 1000,
-              (Math.max(...zs) - Math.min(...zs)) / 1000,
-            ],
-            build: layout.place.summary,
-          },
-          { joiner: deps.providers.joiner, store: deps.store, index, signal: deps.signal },
-        );
-        return joined?.item ?? null;
-      },
-      { retries: 3 },
-    );
+    const item = await joining;
     if (!item) throw new Error("this city has nowhere to put it");
 
     await step("pin", async () => {

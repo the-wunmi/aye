@@ -29,6 +29,41 @@ const brief: ConverseBrief = {
 };
 
 describe("people answering players", () => {
+  it("lets others join in and the speaker act, only with who's here and what's real", () => {
+    const people = [
+      { key: "ada", name: "Ada" },
+      { key: "bo", name: "Bo" },
+    ];
+    const offers = [{ kind: "stove", action: "cook", label: "Cook" }];
+    const base = {
+      speaker: "Ada",
+      text: "On it.",
+      remember: "",
+      offer: "",
+      warmth: 0,
+      does: "",
+      alsoSaid: [],
+    };
+    const ok = compileReply(
+      {
+        ...base,
+        does: "Cook",
+        alsoSaid: [
+          { speaker: "Bo", text: "Told you." },
+          { speaker: "A stranger", text: "I'm not here." },
+          { speaker: "Bo", text: "   " },
+        ],
+      },
+      people,
+      offers,
+    );
+    expect(ok?.does).toEqual(offers[0]);
+    expect(ok?.alsoSaid).toEqual([{ person: "bo", name: "Bo", text: "Told you." }]);
+    const made = compileReply({ ...base, does: "Launch the rocket" }, people, offers);
+    expect(made?.does).toBeUndefined();
+    expect(made?.alsoSaid).toBeUndefined();
+  });
+
   it("only someone who is there answers, in bounded words", () => {
     const draft = (over: Partial<ConverseDraft>): ConverseDraft => ({
       warmth: 0,
@@ -36,6 +71,8 @@ describe("people answering players", () => {
       text: "Akwaaba, Wunmi! You've eaten?",
       remember: "Wunmi: new here, polite.",
       offer: "",
+      does: "",
+      alsoSaid: [],
       ...over,
     });
     expect(compileReply(draft({}), people)).toEqual({
@@ -63,6 +100,8 @@ describe("people answering players", () => {
       speaker: "Auntie Esi",
       text: "Sit, I go dish am.",
       remember: "",
+      does: "",
+      alsoSaid: [],
       offer,
     });
     expect(compileReply(draft("buy  WAAKYE"), people, offers)?.offer).toEqual(offers[0]);

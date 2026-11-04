@@ -31,6 +31,7 @@ import {
   runQuestionJob,
 } from "./question-job.ts";
 import { RemoveJob, type RemoveResult, runRemoveJob } from "./remove-job.ts";
+import type { ModelTraffic } from "./traffic.ts";
 
 export const COMPILE_QUEUE = "capture-compile";
 export const COMPILE_WORKFLOW = "captureCompile";
@@ -90,21 +91,34 @@ export const CITY_WORKFLOW = "buildCity";
 
 export const CITY_FINISH_QUEUE = "city-finish";
 
-export function registerCityWorkflow(deps: Omit<CityJobDeps, "step" | "finishLater">) {
+export function registerCityWorkflow(
+  deps: Omit<CityJobDeps, "step" | "finishLater"> & {
+    /** The same providers, for the finishing pass nobody is waiting on. */
+    finishProviders: CityJobDeps["providers"];
+    traffic: ModelTraffic;
+  },
+) {
+  const { finishProviders, traffic, ...rest } = deps;
   const workflow = DBOS.registerWorkflow(
-    async (job: CityJob) =>
-      runCityJob(job, {
-        ...deps,
-        step: dbosStep,
-        // The slow passes run as their own workflow on their own queue.
-        // A city nobody can enter yet must not wait behind another city's polish.
-        finishLater: async (next, { playable }) => {
-          await DBOS.startWorkflow(workflow, {
-            queueName: playable ? CITY_FINISH_QUEUE : CITY_QUEUE,
-            workflowID: `city-${next.worldId}-finish`,
-          })(next);
-        },
-      }),
+    async (job: CityJob) => {
+      const run = (providers: CityJobDeps["providers"]) =>
+        runCityJob(job, {
+          ...rest,
+          providers,
+          step: dbosStep,
+          // The slow passes run as their own workflow on their own queue.
+          // A city nobody can enter yet must not wait behind another city's polish.
+          finishLater: async (next, { playable }) => {
+            await DBOS.startWorkflow(workflow, {
+              queueName: playable ? CITY_FINISH_QUEUE : CITY_QUEUE,
+              workflowID: `city-${next.worldId}-finish`,
+            })(next);
+          },
+        });
+      return job.phase === "finish"
+        ? run(finishProviders)
+        : traffic.foreground(() => run(rest.providers));
+    },
     { name: CITY_WORKFLOW, inputSchema: z.tuple([CityJob]), maxRecoveryAttempts: attempts(5) },
   );
   return workflow;
@@ -195,9 +209,14 @@ export async function questionStatus(
 const CAPTURE_QUEUE = "captures";
 export const CAPTURE_WORKFLOW = "captureIntoCity";
 
-export function registerCaptureWorkflow(deps: Omit<CaptureJobDeps, "step">) {
+export function registerCaptureWorkflow(
+  deps: Omit<CaptureJobDeps, "step"> & { traffic: ModelTraffic },
+) {
+  const { traffic, ...rest } = deps;
   return DBOS.registerWorkflow(
-    async (job: CaptureJob) => runCaptureJob(job, { ...deps, step: dbosStep }),
+    // Someone's waiting for this, at least until the place opens.
+    async (job: CaptureJob) =>
+      traffic.foreground(() => runCaptureJob(job, { ...rest, step: dbosStep })),
     {
       name: CAPTURE_WORKFLOW,
       inputSchema: z.tuple([CaptureJob]),

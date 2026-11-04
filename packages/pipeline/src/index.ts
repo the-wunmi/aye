@@ -179,6 +179,7 @@ export {
 } from "./osm.ts";
 export { overpassSource } from "./overpass.ts";
 export * from "./paint.ts";
+export { patientFetch } from "./patient-fetch.ts";
 export { decodePng, encodePng, PngError, type RgbaImage } from "./png.ts";
 export {
   compilePopulation,

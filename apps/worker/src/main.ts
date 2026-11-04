@@ -34,6 +34,7 @@ import { DBOS } from "@dbos-inc/dbos-sdk";
 import { z } from "zod";
 import type { Providers } from "./compile-job.ts";
 import { libraryFiles } from "./library-files.ts";
+import { ModelTraffic } from "./traffic.ts";
 import {
   registerAskQueue,
   registerAskWorkflow,
@@ -104,10 +105,30 @@ DBOS.setConfig({
 const store = new FsArtifactStore(env.AYE_ARTIFACT_DIR);
 const providers = await loadProviders();
 registerCompileWorkflow({ db, store, providers, signal: controller.signal });
+const traffic = new ModelTraffic();
+/** The providers of a city's slow passes, whose calls give way to anyone who's waiting. */
+const finishing = { ...museConfigFrom(process.env), fetch: traffic.fetch };
 registerCityWorkflow({
   db,
   store,
+  traffic,
   readAsset: libraryFiles(),
+  finishProviders: {
+    city: museCityAuthor(finishing),
+    critic: museLookCritic(finishing),
+    designer: museLookDesigner(finishing),
+    describer: metaDescriber(finishing),
+    author: museWorldAuthor(finishing),
+    furnisher: museFurnisher({ ...finishing, effort: "low" }),
+    arranger: museArranger(finishing),
+    locator: museLocator(finishing),
+    maps: overpassSource(),
+    quick: {
+      city: museCityAuthor({ ...finishing, effort: "low" }, { sketch: true }),
+      describer: metaDescriber({ ...finishing, effort: "low" }, { sketch: true }),
+      author: museWorldAuthor({ ...finishing, effort: "low" }, { sketch: true }),
+    },
+  },
   providers: {
     city: museCityAuthor(museConfigFrom(process.env)),
     critic: museLookCritic(museConfigFrom(process.env)),
@@ -168,10 +189,15 @@ const reconstructor = reconstructorFrom(process.env);
 registerCaptureWorkflow({
   db,
   store,
+  traffic,
   providers: {
-    capture: providers.capture,
+    // Someone's waiting to walk in, and what's filmed already says most of what's there.
+    capture: {
+      ...providers.capture,
+      understander: metaUnderstander({ ...museConfigFrom(process.env), effort: "low" }),
+    },
     describer: providers.describer,
-    author: providers.author,
+    author: museWorldAuthor({ ...museConfigFrom(process.env), effort: "low" }),
     joiner: museCityJoiner({ ...museConfigFrom(process.env), effort: "low" }),
     furnisher: museFurnisher({ ...museConfigFrom(process.env), effort: "low" }),
     painter: musePainter({ ...museConfigFrom(process.env), effort: "low" }),

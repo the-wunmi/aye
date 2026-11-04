@@ -23,8 +23,10 @@ import {
   approveWorld,
   canReadArtifact,
   checkLogin,
+  claimGuest,
   createCapture,
   createCharacter,
+  createGuest,
   createPlace,
   createSession,
   createWorld,
@@ -37,6 +39,7 @@ import {
   getPlaceWorld,
   getWorld,
   Handle,
+  isGuest,
   joinWorld,
   listMyThreads,
   listOpenCities,
@@ -607,6 +610,44 @@ export function createApp({
     return c.json({ handle: body.handle }, 201);
   });
 
+  const guestLimit = rateLimit({
+    windowMs: 3_600_000,
+    max: 20,
+    key: (c) => `guest:${clientIp(c)}`,
+  });
+  app.post("/auth/guest", guestLimit, async (c) => {
+    // Where it's not allowed, there's no such thing.
+    if (env.ALLOW_ANONYMOUS !== "1") throw notFound();
+    const id = randomId("user") as UserId;
+    const { handle } = await createGuest(db, id);
+    await startSession(c, id);
+    return c.json({ handle, guest: true }, 201);
+  });
+
+  const claimLimit = rateLimit({
+    windowMs: 60_000,
+    max: 10,
+    key: (c) => `claim:${(c.get("actor") as { userId?: string }).userId ?? clientIp(c)}`,
+  });
+  app.post("/auth/claim", claimLimit, async (c) => {
+    const actor = user(c);
+    const body = parse(Credentials, await json(c));
+    const result = await claimGuest(db, actor.userId, body);
+    if (result === "taken") return c.json({ error: "handle_taken" }, 409);
+    if (result === "not_a_guest") throw notFound();
+    return c.json({ handle: body.handle });
+  });
+
+  /** What spends model credit takes an account, so nobody can run it up with endless guests. */
+  const accountOnly = async (c: Context<Vars>, next: () => Promise<void>) => {
+    const actor = c.get("actor");
+    if (actor.kind === "user" && (await isGuest(db, actor.userId))) {
+      return c.json({ error: "account_needed" }, 403);
+    }
+    await next();
+    return undefined;
+  };
+
   app.post("/auth/login", authLimit, async (c) => {
     const body = await json(c);
     const ok = await checkLogin(db, {
@@ -626,10 +667,10 @@ export function createApp({
     return c.json({ ok: true });
   });
 
-  app.get("/me", (c) => {
+  app.get("/me", async (c) => {
     const actor = c.get("actor");
     if (actor.kind !== "user") throw signInRequired();
-    return c.json({ handle: c.get("handle") });
+    return c.json({ handle: c.get("handle"), guest: await isGuest(db, actor.userId) });
   });
 
   // ── Worlds (cities) ───────────────────────────────────────────────────────────────
@@ -648,7 +689,10 @@ export function createApp({
   /** What's open to walk into, for someone who hasn't signed up yet. */
   app.get("/open-cities", async (c) => {
     const open = await listOpenCities(db);
-    return c.json({ cities: open.map((w) => ({ ...w, online: onlineIn?.(w.id) ?? 0 })) });
+    return c.json({
+      cities: open.map((w) => ({ ...w, online: onlineIn?.(w.id) ?? 0 })),
+      guests: env.ALLOW_ANONYMOUS === "1",
+    });
   });
 
   const createLimit = rateLimit({
@@ -656,7 +700,7 @@ export function createApp({
     max: 5,
     key: (c) => `world:${(c.get("actor") as Actor & { userId?: string }).userId ?? clientIp(c)}`,
   });
-  app.post("/worlds", createLimit, async (c) => {
+  app.post("/worlds", createLimit, accountOnly, async (c) => {
     const actor = user(c);
     const body = parse(NewWorldBody, await json(c));
     const id = randomId("world") as WorldId;
@@ -796,7 +840,7 @@ export function createApp({
     max: 8,
     key: (c) => `ask:${(c.get("actor") as { userId?: string }).userId ?? clientIp(c)}`,
   });
-  app.post("/worlds/:id/places/:key/ask", askLimit, async (c) => {
+  app.post("/worlds/:id/places/:key/ask", askLimit, accountOnly, async (c) => {
     const actor = user(c);
     const id = parse(IdParam, c.req.param("id")) as WorldId;
     const key = parse(SpecKey, c.req.param("key"));
@@ -925,7 +969,7 @@ export function createApp({
     max: 12,
     key: (c) => `home:${(c.get("actor") as { userId?: string }).userId ?? clientIp(c)}`,
   });
-  app.post("/worlds/:id/home", homeLimit, async (c) => {
+  app.post("/worlds/:id/home", homeLimit, accountOnly, async (c) => {
     const actor = user(c);
     const id = parse(IdParam, c.req.param("id")) as WorldId;
     const { place, request } = parse(HomeBody, await json(c));
@@ -972,7 +1016,7 @@ export function createApp({
     max: 12,
     key: (c) => `question:${(c.get("actor") as { userId?: string }).userId ?? clientIp(c)}`,
   });
-  app.post("/worlds/:id/places/:key/questions", questionLimit, async (c) => {
+  app.post("/worlds/:id/places/:key/questions", questionLimit, accountOnly, async (c) => {
     const actor = user(c);
     const id = parse(IdParam, c.req.param("id")) as WorldId;
     const key = parse(SpecKey, c.req.param("key"));
@@ -1016,7 +1060,7 @@ export function createApp({
     max: 600,
     key: (c) => `piece:${(c.get("actor") as { userId?: string }).userId ?? clientIp(c)}`,
   });
-  app.post("/worlds/:id/captures/pieces", pieceLimit, async (c) => {
+  app.post("/worlds/:id/captures/pieces", pieceLimit, accountOnly, async (c) => {
     const actor = user(c);
     const id = parse(IdParam, c.req.param("id")) as WorldId;
     const { upload, index } = parse(PieceQuery, c.req.query());
@@ -1036,7 +1080,7 @@ export function createApp({
     return c.json({ ok: true });
   });
 
-  app.post("/worlds/:id/captures", captureLimit, async (c) => {
+  app.post("/worlds/:id/captures", captureLimit, accountOnly, async (c) => {
     const actor = user(c);
     const id = parse(IdParam, c.req.param("id")) as WorldId;
     const query = parse(CaptureQuery, c.req.query());

@@ -75,6 +75,10 @@ export interface RealmSocket {
 
 const OPEN = 1;
 const LOOP_MS = 100;
+/** How long a place with people in it stays quiet before they may talk among themselves. */
+const OVERHEAR_AFTER_MS = 75_000;
+/** Between one person's words and the next's, so they read as a conversation. */
+const THEN_PAUSE_MS = 1_800;
 /** Snapshots go out every this many loops (5 Hz); clients interpolate between them. */
 const SNAP_EVERY = 2;
 /** Skip snapshots to a socket that has this much unsent: slow clients can't build up memory. */
@@ -94,6 +98,7 @@ export interface ReplyRequest {
   playerName: string;
   said: string;
   arrived: boolean;
+  overheard?: boolean;
   present: string[];
   closeness: Record<string, number>;
   recent: { from: string; text: string }[];
@@ -119,7 +124,13 @@ export interface RealmDeps {
     warmth?: number;
     /** Something to do here they offered (checked again against the place before it's shown). */
     offer?: { kind: string; action: string; label: string };
+    /** What the speaker goes and does: a request like anyone's, which the sim may refuse. */
+    does?: { kind: string; action: string; label: string };
+    /** Others here who speak next. */
+    alsoSaid?: { person: string; name: string; text: string }[];
   } | null>;
+  /** How long a place stays quiet before its people may talk among themselves; 0: they don't. */
+  overhearAfterMs?: number;
   /**
    * A player with nothing to do: their world's director gives them something (at most once
    * per `key`: a city day, or the thread they just ended). Absent: they wait for its next turn.
@@ -193,6 +204,8 @@ interface Room {
   replying: boolean;
   /** Said while someone was answering: answered next. */
   nextReply: { player: Player; said: string } | null;
+  /** When anything was last said here, or the room last tried (real ms). */
+  lastTalk: number;
   /** When each player was last greeted on walking in (real ms), by user id. */
   greeted: Map<string, number>;
 }
@@ -260,9 +273,9 @@ export function cleanChat(text: string): string {
 
 export class Realm {
   readonly #deps: Required<
-    Omit<RealmDeps, "db" | "content" | "replies" | "homeProposal" | "welcome">
+    Omit<RealmDeps, "db" | "content" | "replies" | "homeProposal" | "welcome" | "overhearAfterMs">
   > &
-    Pick<RealmDeps, "db" | "content" | "replies" | "homeProposal" | "welcome">;
+    Pick<RealmDeps, "db" | "content" | "replies" | "homeProposal" | "welcome" | "overhearAfterMs">;
   readonly #rooms = new Map<string, Room>();
   #joins = 0;
   readonly #players = new Map<string, Player>();
@@ -667,6 +680,7 @@ export class Realm {
         );
       }
       this.#heard(room, line.from, line.text);
+      await this.#carryOn(room, player, reply);
     } finally {
       room.replying = false;
       const next = room.nextReply;
@@ -674,6 +688,100 @@ export class Realm {
       if (next && room.players.has(next.player)) {
         void this.#answer(next.player, room, next.said, false).catch(failed("answer"));
       }
+    }
+  }
+
+  /** What comes after someone's first words: they go and do what they said, and others join in. */
+  async #carryOn(
+    room: Room,
+    player: Player,
+    reply: NonNullable<Awaited<ReturnType<NonNullable<RealmDeps["replies"]>>>>,
+  ): Promise<void> {
+    const taken = new Set([...room.characters.keys(), ...room.held.keys()]);
+    const d = reply.does;
+    const slot = room.sim.slotOf(reply.person);
+    // Only one of the world's own people, and only what they could really do now.
+    const thing =
+      d && slot >= 0 && !taken.has(reply.person) ? room.sim.thingFor(slot, d.kind, d.action) : null;
+    if (d && thing) {
+      room.pending.push({ type: "use", agent: reply.person, object: thing, action: d.action });
+    }
+    for (const next of reply.alsoSaid ?? []) {
+      await new Promise((r) => setTimeout(r, THEN_PAUSE_MS));
+      const at = room.sim.slotOf(next.person);
+      if (player.closed || !room.players.has(player)) return;
+      if (at < 0 || room.sim.present[at] !== 1 || taken.has(next.person)) continue;
+      const row = await postChat(this.#deps.db, player.actor, {
+        id: randomId("message"),
+        worldId: room.worldId,
+        placeKey: room.placeKey,
+        instance: room.instance,
+        speaker: next.name,
+        text: cleanChat(next.text),
+      });
+      if (!row) return;
+      const line: ChatLine = {
+        id: row.id,
+        from: row.speaker,
+        agent: next.person,
+        text: row.text,
+        at: row.at,
+      };
+      for (const p of room.players) this.#send(p, { t: "said", line });
+      this.#heard(room, line.from, line.text);
+    }
+  }
+
+  /** A quiet room with someone in it: the people here may talk among themselves. */
+  async #overhear(room: Room): Promise<void> {
+    const replies = this.#deps.replies;
+    const listener = [...room.players].find((p) => !p.closed && !p.selfCare);
+    if (!replies || !listener || room.replying) return;
+    const players = new Set([...room.characters.keys(), ...room.held.keys()]);
+    const present = room.spec.people
+      .map((p) => p.key)
+      .filter((k) => {
+        const i = room.sim.slotOf(k);
+        return i >= 0 && room.sim.present[i] === 1 && !players.has(k);
+      });
+    if (present.length < 2) return;
+    room.replying = true;
+    try {
+      const reply = await replies({
+        worldId: room.worldId,
+        placeKey: room.placeKey,
+        instance: room.instance,
+        playerName: "",
+        said: "",
+        arrived: false,
+        overheard: true,
+        present,
+        closeness: {},
+        recent: room.recent.slice(-8),
+      });
+      if (!reply || listener.closed || !room.players.has(listener)) return;
+      const row = await postChat(this.#deps.db, listener.actor, {
+        id: randomId("message"),
+        worldId: room.worldId,
+        placeKey: room.placeKey,
+        instance: room.instance,
+        speaker: reply.name,
+        text: cleanChat(reply.text),
+      });
+      if (!row) return;
+      const line: ChatLine = {
+        id: row.id,
+        from: row.speaker,
+        agent: reply.person,
+        text: row.text,
+        at: row.at,
+      };
+      for (const p of room.players) this.#send(p, { t: "said", line });
+      this.#heard(room, line.from, line.text);
+      await this.#carryOn(room, listener, reply);
+    } finally {
+      room.replying = false;
+      room.lastTalk = this.#deps.now();
     }
   }
 
@@ -930,6 +1038,7 @@ export class Realm {
       checking: false,
       recent: [],
       replying: false,
+      lastTalk: this.#deps.now(),
       nextReply: null,
       greeted: new Map(),
     };
@@ -1016,6 +1125,16 @@ export class Realm {
         );
         if (mine.length > 0) this.#send(p, { t: "events", events: mine });
       }
+    }
+    const overhearAfter = this.#deps.overhearAfterMs ?? OVERHEAR_AFTER_MS;
+    if (
+      overhearAfter > 0 &&
+      room.players.size > 0 &&
+      !room.replying &&
+      this.#deps.now() - room.lastTalk >= overhearAfter
+    ) {
+      room.lastTalk = this.#deps.now();
+      void this.#overhear(room).catch(failed("overhear"));
     }
     if (++room.loops % SNAP_EVERY === 0 && room.players.size > 0) {
       const snap = { t: "snap" as const, ...snapshot(room.sim), clock: this.#clock(world) };

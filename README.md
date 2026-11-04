@@ -31,7 +31,7 @@ pnpm dev                      # web http://localhost:5173 · api http://127.0.0.
 
 Then open http://localhost:5173, sign up, and describe a place or a whole city. The
 worker designs and builds it (a few minutes; model answers are cached under `.aye/`, so
-rebuilding is free). When it opens, make a character and play. Open a second browser profile
+rebuilding is free). When it opens, make a character and play. Set `ALLOW_ANONYMOUS=1` to let people play as guests before signing up. Open a second browser profile
 to play together. `MUSE_API_KEY` is required.
 
 Run all checks (source hygiene, lint, typecheck, every test including the database-backed

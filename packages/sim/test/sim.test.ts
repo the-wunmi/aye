@@ -127,6 +127,41 @@ describe("Sim", () => {
     expect(done.has("use")).toBe(true);
   });
 
+  it("lets one of the world's people be asked to do something, by the same rules", () => {
+    const find = (sim: Sim) => {
+      for (const person of sampleSpec.people) {
+        const slot = sim.slotOf(person.key);
+        for (const kind of sampleSpec.kinds) {
+          for (const action of kind.actions) {
+            const object = sim.thingFor(slot, kind.key, action.key);
+            if (object) return { agent: person.key, object, action: action.key, slot, kind };
+          }
+        }
+      }
+      return null;
+    };
+    const a = new Sim(init);
+    const before = a.hash();
+    const asked = find(a);
+    if (!asked) throw new Error("nothing to do in the sample");
+    // Looking changes nothing.
+    expect(a.hash()).toBe(before);
+    expect(a.canDoNow(asked.slot, asked.kind.key, asked.action)).toBe(true);
+    expect(a.thingFor(asked.slot, "no_such_kind", asked.action)).toBeNull();
+    const use = {
+      type: "use" as const,
+      agent: asked.agent,
+      object: asked.object,
+      action: asked.action,
+    };
+    const rejected = a.step([use]).filter((e) => e.type === "command_rejected");
+    expect(rejected).toEqual([]);
+    // Same request, same world.
+    const b = new Sim(init);
+    b.step([use]);
+    expect(b.hash()).toBe(a.hash());
+  });
+
   it("rejects intents that break the rules instead of trusting the client", () => {
     const sim = new Sim(init);
     const events = sim.step([

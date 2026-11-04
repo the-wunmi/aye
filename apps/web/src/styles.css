@@ -3491,8 +3491,63 @@ button.item:hover {
   margin: 0 0 0.6em;
 }
 
-.home .card h3 a {
-  color: inherit;
+.home-city {
+  border: 0;
+  width: 100%;
+  text-align: left;
+  color: var(--ink);
+  cursor: pointer;
+  font: inherit;
+}
+
+.home-city:hover {
+  outline: 2px solid var(--home-window);
+}
+
+.home-city:focus-visible {
+  outline: 3px solid #fff;
+  outline-offset: 3px;
+}
+
+.home-play {
+  display: grid;
+  justify-items: start;
+  gap: 0.1em;
+  width: min(460px, 100%);
+  padding: 0.9em 1.2em;
+  border: 0;
+  border-radius: 20px;
+  font-size: 1.3rem;
+  font-weight: 900;
+  text-align: left;
+  color: #10233a;
+  background: var(--home-window);
+  box-shadow: 0 6px 0 #c8912a;
+  cursor: pointer;
+}
+
+.home-play small {
+  font-size: 0.9rem;
+  font-weight: 500;
+}
+
+.home-play:focus-visible {
+  outline: 3px solid #fff;
+  outline-offset: 3px;
+}
+
+.save-account {
+  display: grid;
+  gap: 0.7em;
+}
+
+.save-account p {
+  margin: 0;
+}
+
+.home .save-account input {
+  background: #fff;
+  color: #1d1b16;
 }
 
 .home .auth {

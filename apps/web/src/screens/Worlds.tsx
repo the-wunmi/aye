@@ -11,6 +11,7 @@ import { type BuildRange, usualWait, waitNote } from "../game/build-time.ts";
 import { watchBuild } from "../game/build-watch.ts";
 import { askToNotify } from "../game/notify.ts";
 import type { CityBundle, WorldSummary } from "../game/types.ts";
+import { SaveAccount } from "./SaveAccount.tsx";
 import { Skyline } from "./Skyline.tsx";
 
 const EXAMPLE = "A street, a shop, someone's home, or a whole city";
@@ -22,13 +23,37 @@ interface Progress {
   outdated: boolean;
 }
 
+const LAST_CITY = "aye:last-city";
+
+/** Where they last played, so the start screen can offer to take them straight back. */
+export function rememberCity(id: string): void {
+  try {
+    localStorage.setItem(LAST_CITY, id);
+  } catch {
+    // Private mode: they'll pick it from the list.
+  }
+}
+
+const lastCity = () => {
+  try {
+    return localStorage.getItem(LAST_CITY);
+  } catch {
+    return null;
+  }
+};
+
 export function Worlds({
   handle,
   notice,
+  guest,
+  onSaved,
   onPlay,
   onLogout,
 }: {
   handle: string;
+  /** Playing without an account: building and filming ask for one first. */
+  guest: boolean;
+  onSaved(handle: string): void;
   /** Why they're here and not where a link was taking them. */
   notice?: string;
   /** Into a city; if they came to film something, that opens as they arrive. */
@@ -155,6 +180,7 @@ export function Worlds({
   const others = worlds?.filter((w) => !w.owner && !w.joined) ?? [];
 
   const ready = worlds?.filter((w) => w.status === "ready") ?? [];
+  const again = mine.find((w) => w.id === lastCity() && w.status === "ready");
 
   return (
     <div className="home">
@@ -163,15 +189,24 @@ export function Worlds({
         <header className="page-head">
           <span className="home-logo">Ayé</span>
           <span className="grow" />
-          <span className="home-who">@{handle}</span>
-          <button type="button" className="link" onClick={onLogout}>
-            Log out
-          </button>
+          {!guest && <span className="home-who">@{handle}</span>}
+          {guest ? (
+            <span className="home-who">Playing as a guest</span>
+          ) : (
+            <button type="button" className="link" onClick={onLogout}>
+              Log out
+            </button>
+          )}
         </header>
 
         <section className="home-hero">
           <h1>Where do you want to live?</h1>
           <p>Somewhere real or somewhere you've imagined. Everyone here lives in it with you.</p>
+          {again && (
+            <button type="button" className="home-play" onClick={() => void play(again)}>
+              Continue in {again.name}
+            </button>
+          )}
           <div className="home-ways">
             <button
               type="button"
@@ -195,7 +230,16 @@ export function Worlds({
             </button>
           </div>
 
-          {way === "film" && (
+          {guest && way && (
+            <div className="home-tray">
+              <SaveAccount
+                why="Add a name and password to build and film, and keep everything you've done."
+                onSaved={onSaved}
+              />
+            </div>
+          )}
+
+          {!guest && way === "film" && (
             <div className="home-tray">
               {ready.length === 0 ? (
                 <p>
@@ -221,7 +265,7 @@ export function Worlds({
             </div>
           )}
 
-          {way === "describe" && (
+          {!guest && way === "describe" && (
             <div className="home-tray">
               <textarea
                 rows={3}

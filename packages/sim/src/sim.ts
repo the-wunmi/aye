@@ -767,13 +767,18 @@ export class Sim {
 
   /** Could person `i` do this now, on any of these things here? Walking there aside. */
   canDoNow(i: number, kind: string, action: string): boolean {
+    return this.thingFor(i, kind, action) !== null;
+  }
+
+  /** The first of these things person `i` could do this on now, if any. Reads, changes nothing. */
+  thingFor(i: number, kind: string, action: string): ObjectId | null {
     for (let t = 0; t < this.things.length; t++) {
       const thing = this.things[t] as SimThing;
       if (thing.kind.key !== kind) continue;
       const a = thing.kind.actions.find((x) => x.def.key === action);
-      if (a && !this.#cannotUse(i, t, a) && this.#canReach(i, t)) return true;
+      if (a && !this.#cannotUse(i, t, a) && this.#canReach(i, t)) return thing.id;
     }
-    return false;
+    return null;
   }
 
   /** Is resource `r` available here now: public supply, or a thing supplying it? */

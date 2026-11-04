@@ -12,7 +12,7 @@ import { Auth } from "./screens/Auth.tsx";
 import { Crashed } from "./screens/Crashed.tsx";
 import { CreateCharacter } from "./screens/CreateCharacter.tsx";
 import { Game } from "./screens/Game.tsx";
-import { Worlds } from "./screens/Worlds.tsx";
+import { rememberCity, Worlds } from "./screens/Worlds.tsx";
 import { applyTheme } from "./theme.ts";
 
 type Screen =
@@ -43,14 +43,16 @@ const LINK_TROUBLE = "That link isn't open to you, or the city isn't ready yet."
 
 export function App() {
   const [screen, setScreen] = useState<Screen>({ at: "loading" });
+  const [guest, setGuest] = useState(false);
 
   // Signed out only when the server says so; if it can't be reached yet, keep trying.
   useEffect(() => {
     let stop = false;
     const check = (wait: number) => {
-      api<{ handle: string }>("/me")
+      api<{ handle: string; guest?: boolean }>("/me")
         .then((me) => {
           if (stop) return;
+          setGuest(me.guest === true);
           // Wherever the address says: a link, or the same spot again after a reload.
           const route = parseRoute(location.pathname);
           setScreen(
@@ -74,6 +76,10 @@ export function App() {
   // The address follows where you are, and the back button follows the address. Signed out, it
   // stays as it is, so a link still goes where it said once they're in.
   const worldShown = screen.at === "play" ? screen.world.id : null;
+  useEffect(() => {
+    if (worldShown) rememberCity(worldShown);
+  }, [worldShown]);
+
   const atList = screen.at === "worlds";
   useEffect(() => {
     if (worldShown && parseRoute(location.pathname)?.world !== worldShown) {
@@ -166,7 +172,8 @@ export function App() {
       case "auth":
         return (
           <Auth
-            onIn={(handle) => {
+            onIn={(handle, isGuest) => {
+              setGuest(isGuest);
               const route = parseRoute(location.pathname);
               setScreen(route ? { at: "opening", handle, route } : { at: "worlds", handle });
             }}
@@ -176,6 +183,11 @@ export function App() {
         return (
           <Worlds
             handle={screen.handle}
+            guest={guest}
+            onSaved={(handle) => {
+              setGuest(false);
+              setScreen({ at: "worlds", handle });
+            }}
             onPlay={(world, film) =>
               setScreen({ at: "entering", handle: screen.handle, world, film })
             }
@@ -204,6 +216,11 @@ export function App() {
               bundle={screen.bundle}
               character={screen.character}
               handle={screen.handle}
+              guest={guest}
+              onSaved={(saved) => {
+                setGuest(false);
+                setScreen((now) => ("handle" in now ? { ...now, handle: saved } : now));
+              }}
               startFilming={screen.film === true}
               openPlace={screen.place ?? null}
               onLeave={leave}

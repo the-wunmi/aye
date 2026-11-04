@@ -30,6 +30,8 @@ export const ConverseJob = z.strictObject({
   /** What they said; "" when they just walked in. */
   said: z.string().max(300),
   arrived: z.boolean(),
+  /** Nobody spoke to them: the people here may talk among themselves. */
+  overheard: z.boolean().optional(),
   /** The place's people who are here (not players, not held), by key. */
   present: z.array(SpecKey).max(16),
   /** How close the player is to each of the people here, by person key. */
@@ -61,6 +63,8 @@ export async function runConverseJob(
 ): Promise<Reply | null> {
   // Nobody here and nothing said: walking into an empty place gets no greeting.
   if (job.present.length === 0 && job.arrived) return null;
+  // It takes two to talk among themselves.
+  if (job.overheard && job.present.length < 2) return null;
   const world = await systemGetWorld(deps.db, job.worldId);
   if (!world?.city) return null;
   const city = CitySpec.safeParse(await readJson(deps.store, ref(world.city)));
@@ -106,6 +110,7 @@ export async function runConverseJob(
             closeness: job.closeness?.[p.key] ?? 0,
           })),
       ...(empty ? { empty: true } : {}),
+      ...(job.overheard ? { overheard: true } : {}),
       player: { name: job.playerName, said: job.said, arrived: job.arrived },
       recent: job.recent,
       offers: offers.map((o) => ({
@@ -129,5 +134,14 @@ export async function runConverseJob(
   if (reply?.remember && !empty) {
     await systemRememberPerson(deps.db, job.worldId, memoryKey, reply.person, reply.remember);
   }
-  return reply;
+  if (!reply) return null;
+  // A place with nobody in it has nobody to act or join in. Overheard talk offers nobody anything.
+  const { does, alsoSaid, offer, ...said } = reply;
+  return {
+    ...said,
+    warmth: job.overheard ? 0 : reply.warmth,
+    ...(offer && !job.overheard ? { offer } : {}),
+    ...(does && !empty ? { does } : {}),
+    ...(alsoSaid && !empty ? { alsoSaid } : {}),
+  };
 }
