@@ -84,11 +84,12 @@ passing test.
   is reproducible.
 - Changing a stage's code or prompt behaviour? **Bump its version** (`WORLD_HARNESS_VERSION`,
   `WORLD_COMPILER_VERSION`, `ASSEMBLER_VERSION`, …). Prompt text is hashed into recipes.
-- Models _write_, code _bounds and checks_, play _tests_, owners _approve_ (ADR 0013). A
+- Models _write_, code _bounds and checks_, play _tests_, owners _publish_ (ADR 0014). A
   model writes a whole world as a `WorldDraft`; `compileWorld` derives every key from the
   model's names, maps objects back by index, clamps every number to `WORLD_BOUNDS`, and
   reports anything that doesn't add up; `evaluateWorld` plays it; findings go back for
-  revision. Only the owner's approval (`approveWorld`) publishes a world to others.
+  revision. Others can see a city only if its owner makes it public, and only once it's built.
+  (`approveWorld` records approval of one place's world, but nothing gates play on that flag.)
 - A spec is **data, never code**: conditions are integer comparisons, effects are integer
   assignments and rates. The sim interprets it; nothing in a spec is ever evaluated as code.
 - A model never chooses ids, never writes code, and never changes physics. Physics (bodies,
@@ -152,7 +153,7 @@ Same scene + world spec + settings + command log ⇒ same `Sim.hash()` on every 
 Frame sampling and redaction run on our infrastructure. Segmentation (SAM 3.1, hosted) is the
 one call that sees unredacted keyframes, because finding faces and number plates is its job
 (ADR 0012); never send it more than the sampled keyframes. Everything after it (`Understander`,
-`Stylizer`, anything a player sees) only accepts `RedactedFrameSet` (enforced by the types),
+anything a player sees) only accepts `RedactedFrameSet` (enforced by the types),
 and private tracks (faces, plates, documents, screens) never become scene objects.
 
 ### 6. Bounded everything
@@ -191,7 +192,8 @@ schemas must too. Request bodies, queues, sim ticks per wake and command queues 
 - The sim uses struct-of-arrays typed arrays. No per-tick allocation in hot loops. Reuse search
   buffers (`PathFinder`).
 - Rendering: merge static geometry and instance repeated meshes. Keep draw calls in the
-  single digits per scene. The sim runs in a worker. The renderer interpolates between ticks.
+  single digits per scene. Places run on the server and city life in a Web Worker. The renderer
+  interpolates between snapshots.
 - Measure before optimising, and say what you measured (e.g. "one simulated day: 49 ms").
 
 ## Code style
@@ -229,7 +231,7 @@ schemas must too. Request bodies, queues, sim ticks per wake and command queues 
 - **Let interfaces express something new** (a widget, block, data source or intent): add it to
   `city-spec.ts` (and `cityIssues` if it references anything), to `CityDraft` and
   `compileCity`/`draftOfCity`, to the critique if it's essential, to the prompt, and render it
-  in `apps/web/src/game` (`Hud.tsx`, `Phone.tsx`, `sources.ts`). Test the source in
+  in `apps/web/src/game` (`Hud.tsx`, `Panel.tsx`, `sources.ts`). Test the source in
   `apps/web/test/sources.test.ts`.
 - **Change how things look:** never in code. Looks are primitives models write; improve them
   through the prompts in `pipeline/src/muse.ts` (authors, `LOOK_PROMPT` for the critic,
@@ -244,7 +246,8 @@ schemas must too. Request bodies, queues, sim ticks per wake and command queues 
   `runStage` with a full `StageSpec`, version it, and test that a re-run makes zero provider
   calls.
 - **Add a model provider:** implement the port in `pipeline/src/providers.ts` with an
-  immutable `ModelRef.version`. Keep raw-media providers on our infrastructure.
+  immutable `ModelRef.version`. Keep raw-media providers on our infrastructure (segmentation is
+  the one exception, invariant 5).
 - **Change the DB schema:** edit `packages/db/src/schema.ts`, run
   `pnpm --filter @aye/db generate`, review the SQL, and commit it. Never edit applied
   migrations.

@@ -1,0 +1,156 @@
+{
+  "format": "aye.demo-clips",
+  "version": 1,
+  "clips": [
+    {
+      "slug": "oshodi-lagos",
+      "name": "Oshodi, Lagos",
+      "source": "https://upload.wikimedia.org/wikipedia/commons/transcoded/2/2d/Video_of_the_Activities_in_Oshodi%2C_Lagos%2C_Nigeria.webm/Video_of_the_Activities_in_Oshodi%2C_Lagos%2C_Nigeria.webm.360p.mpeg4.mov",
+      "start": 40,
+      "seconds": 20,
+      "currency": "NGN",
+      "credit": {
+        "title": "Video of the Activities in Oshodi, Lagos, Nigeria.webm",
+        "author": "Ready Street",
+        "licence": "CC BY-SA 4.0",
+        "licenceUrl": "https://creativecommons.org/licenses/by-sa/4.0",
+        "page": "https://commons.wikimedia.org/wiki/File:Video_of_the_Activities_in_Oshodi,_Lagos,_Nigeria.webm"
+      }
+    },
+    {
+      "slug": "cotonou",
+      "name": "Cotonou street",
+      "source": "https://upload.wikimedia.org/wikipedia/commons/transcoded/8/8c/Motos_%C3%A0_Cotonou.webm/Motos_%C3%A0_Cotonou.webm.480p.vp9.webm",
+      "start": 0,
+      "seconds": 20,
+      "currency": "XOF",
+      "credit": {
+        "title": "Motos à Cotonou.webm",
+        "author": "Ji-Elle",
+        "licence": "CC BY-SA 4.0",
+        "licenceUrl": "https://creativecommons.org/licenses/by-sa/4.0",
+        "page": "https://commons.wikimedia.org/wiki/File:Motos_%C3%A0_Cotonou.webm"
+      }
+    },
+    {
+      "slug": "monkassa-market",
+      "name": "Monkassa market day, Benin",
+      "source": "https://upload.wikimedia.org/wikipedia/commons/transcoded/8/8c/Jour_de_March%C3%A9_%C3%A0_Monkassa_dans_l%27alibori_au_B%C3%A9nin.webm/Jour_de_March%C3%A9_%C3%A0_Monkassa_dans_l%27alibori_au_B%C3%A9nin.webm.360p.mpeg4.mov",
+      "start": 5,
+      "seconds": 20,
+      "currency": "XOF",
+      "credit": {
+        "title": "Jour de Marché à Monkassa dans l'alibori au Bénin.webm",
+        "author": "Koubourat",
+        "licence": "CC BY-SA 4.0",
+        "licenceUrl": "https://creativecommons.org/licenses/by-sa/4.0",
+        "page": "https://commons.wikimedia.org/wiki/File:Jour_de_March%C3%A9_%C3%A0_Monkassa_dans_l%27alibori_au_B%C3%A9nin.webm"
+      }
+    },
+    {
+      "slug": "accra",
+      "name": "Accra",
+      "source": "https://upload.wikimedia.org/wikipedia/commons/transcoded/8/8f/Accra.webm/Accra.webm.480p.vp9.webm",
+      "start": 0,
+      "seconds": 12,
+      "currency": "GHS",
+      "credit": {
+        "title": "Accra.webm",
+        "author": "Bekoe Micky",
+        "licence": "CC BY-SA 4.0",
+        "licenceUrl": "https://creativecommons.org/licenses/by-sa/4.0",
+        "page": "https://commons.wikimedia.org/wiki/File:Accra.webm"
+      }
+    },
+    {
+      "slug": "trubarjeva-ljubljana",
+      "name": "Trubarjeva street, Ljubljana",
+      "source": "https://upload.wikimedia.org/wikipedia/commons/transcoded/4/4c/Walking_down_the_Trubarjeva_street.webm/Walking_down_the_Trubarjeva_street.webm.480p.vp9.webm",
+      "start": 0,
+      "seconds": 13,
+      "currency": "EUR",
+      "credit": {
+        "title": "Walking down the Trubarjeva street.webm",
+        "author": "Sounds of Changes",
+        "licence": "CC BY 3.0",
+        "licenceUrl": "https://creativecommons.org/licenses/by/3.0",
+        "page": "https://commons.wikimedia.org/wiki/File:Walking_down_the_Trubarjeva_street.webm"
+      }
+    },
+    {
+      "slug": "bahar-shiraz-tehran",
+      "name": "Bahar Shiraz Street, Tehran",
+      "source": "https://upload.wikimedia.org/wikipedia/commons/transcoded/5/5d/TEHRAN2021-Baharshiraz_Street_4k_walk_with_me-amazing_atumn-%D8%AE%DB%8C%D8%A7%D8%A8%D8%A7%D9%86_%D8%A8%D9%87%D8%A7%D8%B1_%D8%B4%DB%8C%D8%B1%D8%A7%D8%B2.webm/TEHRAN2021-Baharshiraz_Street_4k_walk_with_me-amazing_atumn-%D8%AE%DB%8C%D8%A7%D8%A8%D8%A7%D9%86_%D8%A8%D9%87%D8%A7%D8%B1_%D8%B4%DB%8C%D8%B1%D8%A7%D8%B2.webm.480p.vp9.webm",
+      "start": 40,
+      "seconds": 20,
+      "currency": "IRR",
+      "credit": {
+        "title": "TEHRAN2021-Baharshiraz Street 4k walk with me-amazing atumn-خیابان بهار شیراز.webm",
+        "author": "IRAN TIMES MAG",
+        "licence": "CC BY 3.0",
+        "licenceUrl": "https://creativecommons.org/licenses/by/3.0",
+        "page": "https://commons.wikimedia.org/wiki/File:TEHRAN2021-Baharshiraz_Street_4k_walk_with_me-amazing_atumn-%D8%AE%DB%8C%D8%A7%D8%A8%D8%A7%D9%86_%D8%A8%D9%87%D8%A7%D8%B1_%D8%B4%DB%8C%D8%B1%D8%A7%D8%B2.webm"
+      }
+    },
+    {
+      "slug": "funchal-old-town",
+      "name": "Old Town, Funchal",
+      "source": "https://upload.wikimedia.org/wikipedia/commons/transcoded/d/d9/Old_Town_Funchal%2C_Madeira._Narrow_Restaurant_Street_With_Art_On_Doors_--_Nice_Walks.webm/Old_Town_Funchal%2C_Madeira._Narrow_Restaurant_Street_With_Art_On_Doors_--_Nice_Walks.webm.480p.vp9.webm",
+      "start": 40,
+      "seconds": 20,
+      "currency": "EUR",
+      "credit": {
+        "title": "Old Town Funchal, Madeira. Narrow Restaurant Street With Art On Doors -- Nice Walks.webm",
+        "author": "Recommended Walks",
+        "licence": "CC BY 3.0",
+        "licenceUrl": "https://creativecommons.org/licenses/by/3.0",
+        "page": "https://commons.wikimedia.org/wiki/File:Old_Town_Funchal,_Madeira._Narrow_Restaurant_Street_With_Art_On_Doors_--_Nice_Walks.webm"
+      }
+    },
+    {
+      "slug": "al-rigga-dubai",
+      "name": "Al Rigga, Dubai",
+      "source": "https://upload.wikimedia.org/wikipedia/commons/transcoded/0/00/Dubai_4K_Al_Rigga_Streets_Walking_Tour_2026_-_Deira_Dubai_Daytime_Walk.webm/Dubai_4K_Al_Rigga_Streets_Walking_Tour_2026_-_Deira_Dubai_Daytime_Walk.webm.480p.vp9.webm",
+      "start": 40,
+      "seconds": 20,
+      "currency": "AED",
+      "credit": {
+        "title": "Dubai 4K Al Rigga Streets Walking Tour 2026 - Deira Dubai Daytime Walk.webm",
+        "author": "Travel Explorer",
+        "licence": "CC BY 4.0",
+        "licenceUrl": "https://creativecommons.org/licenses/by/4.0",
+        "page": "https://commons.wikimedia.org/wiki/File:Dubai_4K_Al_Rigga_Streets_Walking_Tour_2026_-_Deira_Dubai_Daytime_Walk.webm"
+      }
+    },
+    {
+      "slug": "sukhumvit-bangkok",
+      "name": "Sukhumvit Road, Bangkok",
+      "source": "https://upload.wikimedia.org/wikipedia/commons/transcoded/0/02/Walking_in_BANGKOK_-_Thailand_-_Sukhumvit_Road_-_4K_60fps_%28UHD%29.webm/Walking_in_BANGKOK_-_Thailand_-_Sukhumvit_Road_-_4K_60fps_%28UHD%29.webm.480p.vp9.webm",
+      "start": 40,
+      "seconds": 20,
+      "currency": "THB",
+      "credit": {
+        "title": "Walking in BANGKOK - Thailand - Sukhumvit Road - 4K 60fps (UHD).webm",
+        "author": "POPtravel",
+        "licence": "CC BY 3.0",
+        "licenceUrl": "https://creativecommons.org/licenses/by/3.0",
+        "page": "https://commons.wikimedia.org/wiki/File:Walking_in_BANGKOK_-_Thailand_-_Sukhumvit_Road_-_4K_60fps_(UHD).webm"
+      }
+    },
+    {
+      "slug": "nanjing-road-shanghai",
+      "name": "Nanjing Road, Shanghai",
+      "source": "https://upload.wikimedia.org/wikipedia/commons/transcoded/2/21/Walking_China_-_A_Short_Stroll_Along_Nanjing_Road%2C_THE_Most_Famous_Shopping_Street_in_Shanghai.webm/Walking_China_-_A_Short_Stroll_Along_Nanjing_Road%2C_THE_Most_Famous_Shopping_Street_in_Shanghai.webm.480p.vp9.webm",
+      "start": 40,
+      "seconds": 20,
+      "currency": "CNY",
+      "credit": {
+        "title": "Walking China - A Short Stroll Along Nanjing Road, THE Most Famous Shopping Street in Shanghai.webm",
+        "author": "Walking China",
+        "licence": "CC BY 3.0",
+        "licenceUrl": "https://creativecommons.org/licenses/by/3.0",
+        "page": "https://commons.wikimedia.org/wiki/File:Walking_China_-_A_Short_Stroll_Along_Nanjing_Road,_THE_Most_Famous_Shopping_Street_in_Shanghai.webm"
+      }
+    }
+  ]
+}
