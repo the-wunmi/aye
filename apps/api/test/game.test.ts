@@ -804,6 +804,15 @@ describe.skipIf(!url)("the game", () => {
     expect(
       (await post("guesty", `/worlds/${worldId}/captures?upload=abcdef0123456789`, {})).status,
     ).toBe(403);
+    expect(
+      (
+        await call("guesty", `/worlds/${worldId}/voice`, {
+          method: "POST",
+          headers: { "content-type": "audio/wav" },
+          body: "RIFF",
+        })
+      ).status,
+    ).toBe(403);
     // A guest can't log in, whatever's sent.
     expect(
       (await post(null, "/auth/login", { handle: me.handle, password: "anything-at-all" })).status,

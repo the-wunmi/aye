@@ -764,16 +764,21 @@ export function Game({
       setWaiting(Date.now());
     },
     replying: waiting !== null,
-    hearSpeech: async (wav) => {
-      const place = placeKey ? `?place=${encodeURIComponent(placeKey)}` : "";
-      const res = await fetch(`/api/worlds/${encodeURIComponent(worldId)}/voice${place}`, {
-        method: "POST",
-        headers: { "content-type": "audio/wav" },
-        body: wav.slice(),
-      });
-      if (!res.ok) throw new Error("not_heard");
-      return ((await res.json()) as { text: string }).text;
-    },
+    // Transcribing takes an account, so a guest gets no microphone rather than one that fails.
+    ...(guest
+      ? {}
+      : {
+          hearSpeech: async (wav) => {
+            const place = placeKey ? `?place=${encodeURIComponent(placeKey)}` : "";
+            const res = await fetch(`/api/worlds/${encodeURIComponent(worldId)}/voice${place}`, {
+              method: "POST",
+              headers: { "content-type": "audio/wav" },
+              body: wav.slice(),
+            });
+            if (!res.ok) throw new Error("not_heard");
+            return ((await res.json()) as { text: string }).text;
+          },
+        }),
     hold: (agent) => send({ t: "hold", agent }),
     release: () => send({ t: "release" }),
     intent,

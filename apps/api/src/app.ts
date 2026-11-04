@@ -1126,7 +1126,7 @@ export function createApp({
     max: 30,
     key: (c) => `voice:${(c.get("actor") as { userId?: string }).userId ?? clientIp(c)}`,
   });
-  app.post("/worlds/:id/voice", voiceLimit, async (c) => {
+  app.post("/worlds/:id/voice", voiceLimit, accountOnly, async (c) => {
     const actor = user(c);
     const id = parse(IdParam, c.req.param("id")) as WorldId;
     const query = parse(VoiceQuery, c.req.query());

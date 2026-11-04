@@ -32,8 +32,8 @@ const Env = z
      */
     AYE_DEV_AUTH: z.enum(["0", "1"]).default("0"),
     /**
-     * Lets people play without signing up, as guests. They can't spend model credit until they
-     * add a name and password. Off unless this deployment says so.
+     * Lets people play without signing up, as guests. Model credit waits for a name and password,
+     * apart from people answering them, which is capped. Off unless this deployment says so.
      */
     ALLOW_ANONYMOUS: z.enum(["0", "1"]).default("0"),
     /** For speech to text only (voices aren't kept, so this can't go through the worker). */

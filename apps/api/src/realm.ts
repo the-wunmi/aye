@@ -21,6 +21,7 @@ import {
   getMyCharacter,
   getPinnedPlace,
   getWorld,
+  isGuest,
   listMyThreads,
   postChat,
   recentChat,
@@ -64,6 +65,7 @@ import {
 } from "@aye/schema";
 import { type Command, MAX_PEOPLE, Sim, type SimEvent, snapshot, TAKEN } from "@aye/sim";
 import type { Content } from "./content.ts";
+import { GuestBudget } from "./guest-budget.ts";
 
 /** What the realm needs from a socket: `ws` in production, a fake in tests. */
 export interface RealmSocket {
@@ -277,6 +279,11 @@ export class Realm {
   > &
     Pick<RealmDeps, "db" | "content" | "replies" | "homeProposal" | "welcome" | "overhearAfterMs">;
   readonly #rooms = new Map<string, Room>();
+  #guestBudgetLazy: GuestBudget | null = null;
+  get #guestBudget(): GuestBudget {
+    this.#guestBudgetLazy ??= new GuestBudget(() => this.#deps.now());
+    return this.#guestBudgetLazy;
+  }
   #joins = 0;
   readonly #players = new Map<string, Player>();
 
@@ -603,6 +610,7 @@ export class Realm {
       });
     // Walking into an empty place: no one to greet them. Speaking in one: the place may answer.
     if (present.length === 0 && arrived) return;
+    if (!(await this.#mayReply(player))) return;
     if (arrived) room.greeted.set(uid, now);
     room.replying = true;
     try {
@@ -691,6 +699,12 @@ export class Realm {
     }
   }
 
+  /** Accounts always may; a guest's replies come out of what guests are allowed to spend. */
+  async #mayReply(player: Player): Promise<boolean> {
+    const userId = player.actor.userId;
+    return !(await isGuest(this.#deps.db, userId)) || this.#guestBudget.take(userId);
+  }
+
   /** What comes after someone's first words: they go and do what they said, and others join in. */
   async #carryOn(
     room: Room,
@@ -737,6 +751,7 @@ export class Realm {
     const replies = this.#deps.replies;
     const listener = [...room.players].find((p) => !p.closed && !p.selfCare);
     if (!replies || !listener || room.replying) return;
+    if (!(await this.#mayReply(listener))) return;
     const players = new Set([...room.characters.keys(), ...room.held.keys()]);
     const present = room.spec.people
       .map((p) => p.key)
