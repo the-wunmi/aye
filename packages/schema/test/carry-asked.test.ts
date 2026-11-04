@@ -1,3 +1,4 @@
+/** `carryAsked`: what a personal copy of a place picks up from the place it was copied from. */
 import { describe, expect, it } from "vitest";
 import { sampleSpec } from "../src/fixtures.ts";
 import { carryAsked, type WorldSpec } from "../src/index.ts";

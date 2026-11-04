@@ -1,3 +1,4 @@
+/** How money owed reads: rounded up to whole units, whatever the currency's part-units. */
 import { describe, expect, it } from "vitest";
 import { moneyOwed } from "../src/format.ts";
 

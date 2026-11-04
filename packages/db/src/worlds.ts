@@ -27,6 +27,7 @@ import type { Db } from "./client.ts";
 import { type Actor, isUser } from "./policy.ts";
 import {
   artifactRefs,
+  captures,
   characters,
   chatMessages,
   placeRevisions,
@@ -112,7 +113,7 @@ export async function createWorld(
   });
 }
 
-/** Worlds you belong to, then public ready ones. */
+/** Worlds you belong to and public ready ones, newest first. */
 export async function listWorlds(db: Db, actor: Actor, limit = 50): Promise<WorldSummary[]> {
   const uid = uidOf(actor);
   if (uid === null) return [];
@@ -207,7 +208,7 @@ export async function joinWorld(db: Db, actor: Actor, id: string) {
   return row?.role ?? null;
 }
 
-/** Owner-only: make a ready world public (or private again). */
+/** Owner-only: make a world public (or private again). Others see it only once it's ready. */
 export async function setWorldVisibility(
   db: Db,
   actor: Actor,
@@ -224,10 +225,6 @@ export async function setWorldVisibility(
   return rows.length > 0;
 }
 
-/**
- * A place as pinned in a world, for someone who can play it: the scene and world spec of its
- * pinned revision. Null if they can't play the world, or nothing is pinned under that key.
- */
 /** Every place's world spec in a world the actor can read, member or not: for counting them. */
 export async function listPinnedSpecs(
   db: Db,
@@ -241,6 +238,55 @@ export async function listPinnedSpecs(
     .innerJoin(worlds, eq(worlds.id, worldPlaces.worldId))
     .where(and(eq(worldPlaces.worldId, worldId), worldReadable(actor)));
   return rows.flatMap((r) => (r.spec ? [r.spec] : []));
+}
+
+/** The keys of a world's places this actor owns, if they play there: theirs to rearrange. */
+export async function listOwnedPlaceKeys(db: Db, actor: Actor, worldId: string): Promise<string[]> {
+  const uid = uidOf(actor);
+  if (uid === null) return [];
+  const rows = await db
+    .select({ key: worldPlaces.key })
+    .from(worldPlaces)
+    .innerJoin(places, eq(places.id, worldPlaces.placeId))
+    .where(
+      and(
+        eq(worldPlaces.worldId, worldId),
+        eq(places.ownerId, uid),
+        canPlay(uid, sql`${worldPlaces.worldId}`),
+      ),
+    );
+  return rows.map((r) => r.key);
+}
+
+/**
+ * A place as pinned in a world, for someone who can play it: the scene and world spec of its
+ * pinned revision. Null if they can't play the world, or nothing is pinned under that key.
+ */
+/**
+ * The keys of a world's filmed places this actor may take away: what they filmed, or anything
+ * filmed in a city they own. A place a model built isn't something filming can undo.
+ */
+export async function listRemovablePlaceKeys(
+  db: Db,
+  actor: Actor,
+  worldId: string,
+): Promise<string[]> {
+  const uid = uidOf(actor);
+  if (uid === null) return [];
+  const rows = await db
+    .selectDistinct({ key: worldPlaces.key })
+    .from(worldPlaces)
+    .innerJoin(places, eq(places.id, worldPlaces.placeId))
+    .innerJoin(captures, eq(captures.placeId, worldPlaces.placeId))
+    .innerJoin(worlds, eq(worlds.id, worldPlaces.worldId))
+    .where(
+      and(
+        eq(worldPlaces.worldId, worldId),
+        or(eq(places.ownerId, uid), eq(worlds.ownerId, uid)),
+        canPlay(uid, sql`${worldPlaces.worldId}`),
+      ),
+    );
+  return rows.map((r) => r.key);
 }
 
 export async function getPinnedPlace(
@@ -475,7 +521,10 @@ export async function systemEnsurePlace(
     .onConflictDoNothing();
 }
 
-/** Record that a world references artifacts (its city spec), so its members may read them. */
+/**
+ * Record that a world references artifacts (its city spec, what its places are made of), so its
+ * members may read them.
+ */
 export async function systemLinkWorldArtifacts(
   db: Db,
   worldId: string,

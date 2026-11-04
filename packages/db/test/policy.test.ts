@@ -1,3 +1,4 @@
+/** The rules in policy.ts, stated as who may do what. */
 import type { UserId } from "@aye/schema";
 import { describe, expect, it } from "vitest";
 import {

@@ -29,7 +29,7 @@ export type RunStatus = z.infer<typeof RunStatus>;
 export const PipelineRun = z.object({
   id: RunId,
   captureId: CaptureId,
-  /** Hash of the pipeline definition (stages + versions), so runs are comparable. */
+  /** Hash naming the pipeline and its version, so runs are comparable. */
   pipelineHash: ArtifactHash,
   status: RunStatus,
   stages: z.array(StageRecord).max(64),

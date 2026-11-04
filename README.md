@@ -12,7 +12,7 @@ Sign up, make a character, wake up at home, and live in it with everyone else in
 walk around, work, eat, travel by the city's own transport, talk, or take over someone the
 world wrote. Nothing about any city is hardcoded; code owns physics, bounds and security.
 
-See [`brief.md`](brief.md) for the product idea, [`docs/architecture.md`](docs/architecture.md)
+See [`brief.md`](brief.md) for what it is, [`CREDITS.md`](CREDITS.md) for whose work it's built on, [`docs/architecture.md`](docs/architecture.md)
 for how it works, [`docs/adr/`](docs/adr) for why, and [`AGENTS.md`](AGENTS.md) for how to
 contribute.
 
@@ -55,3 +55,7 @@ set -a; . ./.env; set +a; pnpm verify
 - **`packages/db`** + **`apps/api`** + **`apps/worker`**: Postgres/PostGIS, accounts and
   actor-scoped access, the HTTP API and the realm (real-time rooms over WebSockets), and DBOS
   durable workflows that build cities and places.
+
+## License
+
+[MIT](LICENSE). The asset library and models are credited in [`CREDITS.md`](CREDITS.md), under their own licences.

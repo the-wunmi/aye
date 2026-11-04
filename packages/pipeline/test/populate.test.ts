@@ -1,3 +1,7 @@
+/**
+ * Tests for populating a city with a scripted model: compiling the draft against the city, and
+ * that a populated city is left alone.
+ */
 import { MemoryArtifactStore, MemoryRecipeIndex } from "@aye/artifacts";
 import { districtsOf, moversOf, placesOf } from "@aye/schema";
 import { sampleCity } from "@aye/schema/fixtures";

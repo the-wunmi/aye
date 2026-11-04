@@ -2,8 +2,9 @@
  * OpenStreetMap's Overpass API as a map source. Server-side only: it reaches the
  * internet. Public instances are often at capacity, so each is tried in turn; answers are
  * size-capped and must look like Overpass JSON before anything reads them (the grounding
- * stage then validates them fully). Being polite is part of the deal: one query per city,
- * memoised forever after, with a user agent that says who we are.
+ * stage then validates them fully). Being polite is part of the deal: each query (roads, lines,
+ * land) is asked once for a city and memoised forever after, with a user agent that says who
+ * we are.
  */
 import type { MapSource } from "./ground.ts";
 
@@ -19,7 +20,8 @@ const BACKOFF_MS = 20_000;
 
 export function overpassSource(opts: { userAgent?: string } = {}): MapSource {
   return {
-    // What the data is: OSM main roads as of the fetch. The fetch is memoised by query.
+    // What the data is: OSM as of the fetch, for every query, though the version names only
+    // roads. Each fetch is memoised by its query.
     ref: { provider: "openstreetmap", model: "overpass", version: "main-roads-1" },
     async fetch(query, signal) {
       const failures: string[] = [];

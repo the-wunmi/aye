@@ -3,7 +3,7 @@
  *
  * Stores are dumb, verified byte buckets keyed by hash. They do no authorisation: knowing a
  * hash must never grant access. Callers (the API) check that the actor may read a record
- * that references the artifact, then hand out a short-lived URL or stream the bytes.
+ * that references the artifact, then stream the bytes.
  */
 import { ArtifactHash, type ArtifactRef, type StageRecord } from "@aye/schema";
 import { hashBytes } from "./hash.ts";
@@ -14,6 +14,8 @@ export interface ArtifactStore {
   /** Returns null if absent. Implementations verify bytes against the hash on read. */
   get(hash: ArtifactHash): Promise<Uint8Array | null>;
   has(hash: ArtifactHash): Promise<boolean>;
+  /** Gone for good, for what someone asked to have removed. No error if it wasn't there. */
+  delete(hash: ArtifactHash): Promise<void>;
 }
 
 /** Maps recipe hashes to the stage outputs they produced: the memo table for generation. */
@@ -47,6 +49,10 @@ export class MemoryArtifactStore implements ArtifactStore {
   async get(hash: ArtifactHash): Promise<Uint8Array | null> {
     const blob = this.#blobs.get(ArtifactHash.parse(hash));
     return blob ? verify(hash, blob.slice()) : null;
+  }
+
+  async delete(hash: ArtifactHash): Promise<void> {
+    this.#blobs.delete(ArtifactHash.parse(hash));
   }
 
   async has(hash: ArtifactHash): Promise<boolean> {

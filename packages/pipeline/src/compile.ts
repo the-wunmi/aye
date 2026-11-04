@@ -5,6 +5,10 @@
  *                                                                  ├─ assemble ─ scene
  *   video ─ sample ─ frames ─ track ─ redact ─ redacted ─ understand ┘
  *
+ * A recording's first map gets a second look against its frames (`review`). Code then walks
+ * either source's layout: what can't be reached goes back to the model (`connect`), and a space
+ * it never connects is left out before assembly.
+ *
  * Either source is first-class. A recording's raw frames reach only the sampler, the
  * segmenter and the redactor; `understand` takes redacted frames only. What the
  * place's things are and do comes after, from the world harness (world.ts).
@@ -327,7 +331,7 @@ export async function compilePlace(source: PlaceSource, deps: CompileDeps): Prom
     understanding = withoutSpaces(understanding, stranded);
     understandingRef = await store.put(json(understanding).bytes, "application/json");
   }
-  // 5. Assemble a canonical Scene (pure code).
+  // 7. Assemble a canonical Scene (pure code).
   const assemble = await run<"scene">(
     {
       stage: "assemble",

@@ -2,20 +2,19 @@
  * City life: the people of a whole city going about their day on its roads.
  *
  * The city's model writes who lives where and what their day looks like (`Population`); this
- * plays it. Roads become a graph (split where they cross, joined where they nearly meet).
- * Each agent (one per person, or one standing for several when a city is big) leaves home or
- * wherever they are at their routine's times, give or take a personal habit of minutes, and
- * takes the shortest way by road. Vehicles slow as a road fills: a speed–density model
- * (Greenshields: speed falls linearly from free flow to a crawl as a road approaches its jam
- * density), with how many a road holds from its lanes (its width) and length. People on foot
- * (slow modes) don't congest roads.
+ * plays it. Roads become a graph (split where they cross, joined where they nearly meet), or a
+ * real city's network is used as it is. Each agent (one per person, or one standing for several
+ * when a city is big) leaves home or wherever they are at their routine's times, give or take a
+ * personal habit of minutes, and takes the fastest way as the roads then are. Traffic is held up
+ * by queues (see `#move`): how many a road holds comes from its lanes and length, and how many it
+ * lets out a minute from its lanes. People on foot, and riders of a line, take no road room.
  *
- * It is a plausible, generic model of a city the model invented, not a calibrated one of a
- * real city: good for seeing how a place lives, not for decisions about real streets.
+ * It is a plausible, generic model, not a calibrated one, even on a real city's roads: good for
+ * seeing how a place lives and comparing what a road change does, not for forecasting real streets.
  *
  * Deterministic like the place sim: one step is one city minute; all state is
  * integers (metres, minutes, people); randomness comes from one seeded stream; agents and
- * roads are processed in index order; `hash()` covers all mutable state. Same city, same
+ * roads are processed in index order; `hash()` covers what plays forward. Same city, same
  * population, same seed ⇒ same hash everywhere, so every player sees the same traffic.
  */
 import { Rng } from "./rng.ts";
@@ -91,7 +90,6 @@ const allowed = (way: number, kind: number) =>
   kind === Kind.Road ||
   (way === WAY.water && (kind === Kind.Ferry || kind === Kind.Access)) ||
   (way === WAY.rail && (kind === Kind.Rail || kind === Kind.Access));
-/** How fast a line's riders get along the roads to and from its stops, metres a minute. */
 /** How fast people get about when the city has nobody on foot to say (metres a minute). */
 const FALLBACK_M_PER_MIN = 80;
 
@@ -140,7 +138,7 @@ const LANE_VEHICLES_PER_MIN = 30;
 const QUEUE_DRAWN_M = 150;
 /** Minutes someone waits for room on the next road before squeezing on anyway (gridlock). */
 const STUCK_MIN = 10;
-/** The slowest a jam gets, permille of free flow: a crawl, never a standstill. */
+/** The slowest `speedPermille` reports, permille of free flow: a crawl, never a standstill. */
 const CRAWL_PERMILLE = 60;
 
 /** `positions()`: someone not out (not drawn). */
@@ -153,7 +151,7 @@ export interface CityStats {
   /** People (not agents) out on a trip right now, and of them on the roads in vehicles. */
   travelling: number;
   onRoads: number;
-  /** Average speed of road traffic as a share of free flow, permille (1000 = no delay). */
+  /** Share of road traffic moving this minute rather than queued, permille (1000 = no queues). */
   flowPermille: number;
   /** The fullest road segment, as people on it over what it holds in a jam, permille. */
   worstPermille: number;
@@ -469,7 +467,6 @@ export class CitySim {
     this.#speed[i] = speed;
     const carries = this.#modeCarries.get(stop.mode) ?? PEOPLE_PER_VEHICLE;
     this.#way[i] = way;
-    // Riders of a line take no road room: they reach its stops on foot or by motorbike.
     this.#mover[i] = this.#modeIndex.get(stop.mode) ?? 0;
     // On foot, or riding a line: no road room taken (they reach its stops on the roads).
     this.#foot[i] = carries === 0 || way !== WAY.road ? 1 : 0;
@@ -591,7 +588,10 @@ export class CitySim {
     }
   }
 
-  /** Speed on an edge as a share of free flow, permille (Greenshields, integer). */
+  /**
+   * What a road's fullness would mean for speed, as a share of free flow, permille (Greenshields,
+   * integer). Not what moves anyone: `#move` holds traffic up with queues instead.
+   */
   speedPermille(e: number): number {
     const full = Math.floor(
       ((this.load[e] as number) * 1000) / Math.max(1, this.edgeCap[e] as number),
@@ -606,7 +606,7 @@ export class CitySim {
     return free > 0 ? Math.min(pace, free) : pace;
   }
 
-  /** Time to cross an edge at free flow (an integer cost for routing). */
+  /** Time to cross an edge as it is now, stretched by how full it is (an integer routing cost). */
   #cost(e: number, way: number): number {
     if (way !== WAY.road) {
       // A line's riders: their lines at line speed, roads at access pace, no congestion.
@@ -647,7 +647,7 @@ export class CitySim {
   }
 
   /**
-   * A shortest-path tree by free-flow time (Dijkstra with a binary heap; ties by node index,
+   * A shortest-path tree by `#cost` (Dijkstra with a binary heap; ties by node index,
    * so it is deterministic): from `root` along `out` edges, or into it along `in` edges.
    * `via[v]` is the edge that leads from v toward the root (into) or into v from it (out).
    */
@@ -842,7 +842,7 @@ export class CitySim {
     };
   }
 
-  /** FNV-1a over all mutable state. */
+  /** FNV-1a over what plays forward, bar what follows from it (route lists, caches, `#foot`). */
   hash(): string {
     let h = 0x811c9dc5;
     const mix = (v: number) => {
@@ -1030,7 +1030,7 @@ export function buildRoadGraph(roads: CityLayout["roads"]) {
       }
     }
   }
-  // Nodes: every cut point, merged when within a few metres.
+  // Nodes: every cut point, merged when within JOIN_M each way.
   const x: number[] = [];
   const z: number[] = [];
   const nodeOf = (px: number, pz: number): number => {

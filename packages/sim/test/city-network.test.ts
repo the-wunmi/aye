@@ -1,3 +1,4 @@
+/** City life on real road networks: one-way streets, speed limits, scenarios and lines. */
 import { describe, expect, it } from "vitest";
 import { type CityLayout, type CityPopulation, CitySim, RESTING } from "../src/city-sim.ts";
 
@@ -334,7 +335,7 @@ describe("CitySim lines", () => {
       },
     ],
   });
-  /** Whether anyone was ever seen on the water (between the terminals), and at a terminal at rest. */
+  /** Whether anyone was seen on the water (between the terminals), and at a terminal at rest. */
   const watch = (sim: CitySim) => {
     const xz = new Float32Array(sim.agents * 2);
     const kind = new Uint8Array(sim.agents);

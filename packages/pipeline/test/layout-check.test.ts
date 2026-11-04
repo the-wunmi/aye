@@ -1,3 +1,7 @@
+/**
+ * Tests for what code can say about a layout: things in each other's way, and leaving out spaces
+ * nobody can reach.
+ */
 import { Scene } from "@aye/schema";
 import { sampleFlat } from "@aye/schema/fixtures";
 import { describe, expect, it } from "vitest";

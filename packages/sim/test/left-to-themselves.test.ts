@@ -1,3 +1,4 @@
+/** Someone nobody is playing: how they spend, carrying on through a change, and practice news. */
 import type { ActionDef, KindDef, ObjectId, PersonDef, WorldSpec } from "@aye/schema";
 import { sampleFlat, sampleSettings, sampleSpec } from "@aye/schema/fixtures";
 import { describe, expect, it } from "vitest";

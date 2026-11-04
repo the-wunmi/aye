@@ -1,3 +1,4 @@
+/** @aye/db's public API: actor-scoped repositories, policy, and `system*` calls for jobs. */
 export * from "./accounts.ts";
 export { connect, type Db } from "./client.ts";
 export * from "./director.ts";

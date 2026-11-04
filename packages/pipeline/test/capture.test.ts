@@ -1,3 +1,7 @@
+/**
+ * Tests for the capture providers: parsing SAM's output, the segmenter, pixel redaction, and
+ * reading Muse's map into the pipeline's contract.
+ */
 import { MemoryArtifactStore } from "@aye/artifacts";
 import type { CaptureId } from "@aye/schema";
 import { describe, expect, it } from "vitest";

@@ -24,6 +24,10 @@ export interface CityBundle {
   catalog: Catalog;
   createdAt: string;
   settings: WorldSettings;
+  /** The keys of places here that are yours to rearrange. */
+  yours?: string[];
+  /** Filmed places here you may take away: yours, or any if the city is. */
+  removable?: string[];
 }
 
 export interface WorldSummary {

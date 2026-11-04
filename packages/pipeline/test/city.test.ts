@@ -1,3 +1,7 @@
+/**
+ * Tests for the city harness without a model: compiling a draft, repairing and critiquing a city,
+ * the authoring loop and dressing.
+ */
 import { hashJson, MemoryArtifactStore, MemoryRecipeIndex } from "@aye/artifacts";
 import { type ArtifactHash, CitySpec, moversOf, placesOf } from "@aye/schema";
 import { sampleCity } from "@aye/schema/fixtures";

@@ -10,8 +10,7 @@
   },
   "scripts": {
     "typecheck": "tsc -p .",
-    "test": "vitest run",
-    "jsonschema": "node scripts/emit-json-schema.ts"
+    "test": "vitest run"
   },
   "dependencies": {
     "zod": "catalog:"

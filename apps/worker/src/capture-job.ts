@@ -3,7 +3,8 @@
  * recording pipeline (frames sampled and redacted on our side, SAM 3.1, the understander), has
  * the world harness write how it works, chooses library looks for what's in it, paints its
  * real surfaces and things with Muse Image, has a model decide how it fits this city, pins it
- * in, and adds it to the city's spec.
+ * in, and adds it to the city's spec. Then, with the place open, its most distinctive things are
+ * rebuilt in 3D and swapped in.
  *
  * It's a real place, so nothing is invented in it: it gets looks for what was filmed, but no
  * set dressing. Only what's derived from redacted frames ever reaches other players: the scene
@@ -19,6 +20,7 @@ import {
   type Db,
   PgRecipeIndex,
   systemGetCapture,
+  systemGetPinnedPlace,
   systemGetWorld,
   systemLinkWorldArtifacts,
   systemRecordArtifacts,
@@ -37,9 +39,12 @@ import {
   furnishWorld,
   joinableKinds,
   joinCity,
+  type ObjectReconstructor,
   type Painter,
   paintPlace,
+  type ReconstructPlanner,
   readJson,
+  reconstructPlace,
   type WorldAuthor,
 } from "@aye/pipeline";
 import {
@@ -59,7 +64,7 @@ import {
 import { evaluateWorld } from "@aye/sim";
 import { z } from "zod";
 import { directStep, EVAL_SETTINGS, type StepRunner } from "./compile-job.ts";
-import { commitAndPin } from "./pin.ts";
+import { commitAndPin, commitOnLatest } from "./pin.ts";
 
 export const CaptureJob = z.strictObject({
   worldId: WorldId,
@@ -81,6 +86,8 @@ export interface CaptureJobDeps {
     joiner: CityJoiner;
     furnisher?: Furnisher;
     painter?: Painter;
+    /** Both, or filmed things keep the looks they have. */
+    rebuilder?: { planner: ReconstructPlanner; reconstructor: ObjectReconstructor };
   };
   signal: AbortSignal;
   step?: StepRunner;
@@ -125,6 +132,8 @@ export async function runCaptureJob(
   });
   if (!target) return null;
 
+  let placeKey: string;
+  const finished: { frames: Awaited<ReturnType<typeof compilePlace>>["frames"] } = { frames: null };
   try {
     await step("start", () => systemSetCaptureStatus(deps.db, job.captureId, "processing"));
     const city = CitySpec.parse(await readJson(deps.store, jsonRef(target.city)));
@@ -147,6 +156,7 @@ export async function runCaptureJob(
       },
       { retries: 3 },
     );
+    finished.frames = layout.frames;
 
     await phase("writing");
     const written = await step(
@@ -341,7 +351,7 @@ export async function runCaptureJob(
       await systemSetCapturePhase(deps.db, job.captureId, "ready", item.key);
       await systemSetCaptureStatus(deps.db, job.captureId, "ready");
     });
-    return { placeKey: item.key };
+    placeKey = item.key;
   } catch (error) {
     await step("fail", async () => {
       await systemSetCapturePhase(deps.db, job.captureId, "failed");
@@ -349,6 +359,86 @@ export async function runCaptureJob(
     });
     throw error;
   }
+
+  // The place is open: people can walk in while its own real things are rebuilt, and they appear
+  // when they're ready. This can't fail the capture: it's only ever a better look.
+  const rebuilder = deps.providers.rebuilder;
+  if (rebuilder) {
+    await step(
+      "rebuild",
+      async () => {
+        const frames = finished.frames;
+        if (!frames) return;
+        const key = placeKey;
+        try {
+          const at = await systemGetPinnedPlace(deps.db, job.worldId, key);
+          if (!at?.spec) return;
+          const [scene, spec] = await Promise.all([
+            readJson(deps.store, jsonRef(at.scene)).then((j) => Scene.parse(j)),
+            readJson(deps.store, jsonRef(at.spec)).then((j) => WorldSpec.parse(j)),
+          ]);
+          const made = await reconstructPlace(spec, scene, frames, {
+            ...rebuilder,
+            store: deps.store,
+            index,
+            signal: deps.signal,
+          });
+          if (made.problems.length > 0) {
+            console.warn(`capture ${job.captureId}: rebuilding: ${made.problems.join("; ")}`);
+          }
+          if (made.meshes.length === 0) return;
+          // That took a while: someone may have rearranged it or asked it for something new, so
+          // the models go on top of whatever it is now, not what it was when this started.
+          const meshOf = new Map(made.spec.things.map((t) => [t.object, t.mesh]));
+          let specRef: ArtifactRef | null = null;
+          const saved = await commitOnLatest(
+            deps.db,
+            { worldId: job.worldId, key },
+            async (now) => {
+              if (!now.spec) return null;
+              const current = WorldSpec.parse(await readJson(deps.store, jsonRef(now.spec)));
+              const next: WorldSpec = {
+                ...current,
+                things: current.things.map((t) => {
+                  const mesh = meshOf.get(t.object);
+                  return mesh ? { ...t, mesh } : t;
+                }),
+              };
+              specRef = await deps.store.put(encodeJson(next), "application/json");
+              await systemRecordArtifacts(deps.db, [specRef, ...made.meshes]);
+              return {
+                scene: Scene.parse(await readJson(deps.store, jsonRef(now.scene))),
+                revision: {
+                  placeId: now.placeId as PlaceRevision["placeId"],
+                  parent: now.revision,
+                  base: jsonRef(now.base),
+                  edits: now.edits,
+                  scene: jsonRef(now.scene),
+                  world: { spec: specRef, approved: false },
+                  authorId: target.ownerId,
+                  message: "Rebuilt its things in 3D",
+                  createdAt: new Date().toISOString(),
+                },
+              };
+            },
+          );
+          if (saved && specRef) {
+            await systemLinkWorldArtifacts(deps.db, job.worldId, [
+              (specRef as ArtifactRef).hash,
+              ...made.meshes.map((m) => m.hash),
+            ]);
+          }
+        } catch (e) {
+          deps.signal.throwIfAborted();
+          console.warn(
+            `capture ${job.captureId}: rebuilding failed: ${e instanceof Error ? e.message.slice(0, 160) : "unknown"}`,
+          );
+        }
+      },
+      { retries: 1 },
+    );
+  }
+  return { placeKey };
 }
 
 /** The id a capture's job runs under: once per capture. */

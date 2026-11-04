@@ -10,8 +10,7 @@
     "typecheck": "tsc -p .",
     "test": "vitest run",
     "refinish": "node --env-file-if-exists=../../.env scripts/refinish.ts",
-    "furnish": "node --env-file-if-exists=../../.env scripts/furnish.ts",
-    "arrange": "node --env-file=../../.env scripts/arrange.ts"
+    "rebuild-place": "node --env-file-if-exists=../../.env scripts/rebuild-place.ts"
   },
   "dependencies": {
     "@aye/artifacts": "workspace:*",

@@ -1,3 +1,4 @@
+/** The data sources a model-written interface can name, evaluated over a sample city. */
 import { placesOf, type RosterEntry, type Source } from "@aye/schema";
 import { sampleCity, sampleSpec } from "@aye/schema/fixtures";
 import { describe, expect, it } from "vitest";

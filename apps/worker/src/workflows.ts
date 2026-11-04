@@ -1,6 +1,6 @@
 /**
  * DBOS registration: durable workflows on Postgres. DBOS checkpoints every step in its
- * system schema, so a crashed or redeployed worker resumes compiles where they stopped, and
+ * system schema, so a crashed or redeployed worker resumes jobs where they stopped, and
  * every run is inspectable with DBOS tooling.
  *
  * Workflow ids are derived from the job, so enqueueing the same compile twice is a no-op
@@ -23,12 +23,14 @@ import { CompileJob, type CompileJobDeps, runCompileJob, type StepRunner } from 
 import { ConverseJob, type ConverseJobDeps, runConverseJob } from "./converse-job.ts";
 import { DirectorJob, type DirectorJobDeps, runDirectorTurn } from "./director-job.ts";
 import { HomeJob, type HomeResult, runHomeJob } from "./home-job.ts";
+import { MoveJob, type MoveResult, runMoveJob } from "./move-job.ts";
 import {
   QuestionJob,
   type QuestionJobDeps,
   type QuestionResult,
   runQuestionJob,
 } from "./question-job.ts";
+import { RemoveJob, type RemoveResult, runRemoveJob } from "./remove-job.ts";
 
 export const COMPILE_QUEUE = "capture-compile";
 export const COMPILE_WORKFLOW = "captureCompile";
@@ -116,7 +118,7 @@ export async function registerCityQueue() {
   await DBOS.registerQueue(CITY_FINISH_QUEUE, { workerConcurrency: 2, globalConcurrency: 4 });
 }
 
-/** One build per world at a time: the id is the world (plus a nonce to allow rebuilds). */
+/** One build per world at a time: the id is the world (plus an attempt, to allow rebuilds). */
 export const cityWorkflowId = (job: CityJob, attempt = 0) => `city-${job.worldId}-${attempt}`;
 
 export async function enqueueCityBuild(
@@ -135,7 +137,7 @@ export async function enqueueCityBuild(
   );
 }
 
-// ── Asking things for new abilities ─────────────────────────────────────────────────
+// ── Questions, filmed places, and asking things for new abilities ───────────────────
 
 export const ASK_QUEUE = "ask";
 const QUESTION_QUEUE = "questions";
@@ -266,6 +268,90 @@ export async function askStatus(
   return { status: "working" };
 }
 
+// ── Someone taking a filmed place away ────────────────────────────────────────────────
+
+export const REMOVE_WORKFLOW = "removePlace";
+
+export function registerRemoveWorkflow(deps: Parameters<typeof runRemoveJob>[1]) {
+  return DBOS.registerWorkflow(
+    async (job: RemoveJob) => dbosStep("remove", () => runRemoveJob(job, deps)),
+    { name: REMOVE_WORKFLOW, inputSchema: z.tuple([RemoveJob]) },
+  );
+}
+
+export const removeWorkflowId = (userId: string, job: RemoveJob) => `remove-${userId}-${job.nonce}`;
+
+export async function enqueueRemove(client: DBOSClient, userId: string, job: RemoveJob) {
+  const valid = RemoveJob.parse({ ...job, userId });
+  const id = removeWorkflowId(userId, valid);
+  await client.enqueue<(job: RemoveJob) => Promise<RemoveResult>>(
+    { queueName: ASK_QUEUE, workflowName: REMOVE_WORKFLOW, workflowID: id },
+    valid,
+  );
+  return id;
+}
+
+export async function removeStatus(
+  client: DBOSClient,
+  id: string,
+): Promise<{ status: "working" } | { status: "done"; result: RemoveResult } | null> {
+  const handle = client.retrieveWorkflow<RemoveResult>(id);
+  const status = await handle.getStatus();
+  if (!status) return null;
+  if (status.status === "SUCCESS") return { status: "done", result: await handle.getResult() };
+  if (
+    status.status === "ERROR" ||
+    status.status === "CANCELLED" ||
+    status.status === "MAX_RECOVERY_ATTEMPTS_EXCEEDED"
+  ) {
+    return { status: "done", result: { ok: false, reason: "That didn't work. Try again." } };
+  }
+  return { status: "working" };
+}
+
+// ── Someone moving a thing in a place of theirs ────────────────────────────────────────
+
+export const MOVE_WORKFLOW = "moveThing";
+
+export function registerMoveWorkflow(deps: Parameters<typeof runMoveJob>[1]) {
+  const run = DBOS.registerWorkflow(
+    async (job: MoveJob) => dbosStep("move", () => runMoveJob(job, deps)),
+    { name: MOVE_WORKFLOW, inputSchema: z.tuple([MoveJob]) },
+  );
+  return run;
+}
+
+/** The job id names who moved it, so only they can look it up. */
+export const moveWorkflowId = (userId: string, job: MoveJob) => `move-${userId}-${job.nonce}`;
+
+export async function enqueueMove(client: DBOSClient, userId: string, job: MoveJob) {
+  const valid = MoveJob.parse({ ...job, userId });
+  const id = moveWorkflowId(userId, valid);
+  await client.enqueue<(job: MoveJob) => Promise<MoveResult>>(
+    { queueName: ASK_QUEUE, workflowName: MOVE_WORKFLOW, workflowID: id },
+    valid,
+  );
+  return id;
+}
+
+export async function moveStatus(
+  client: DBOSClient,
+  id: string,
+): Promise<{ status: "working" } | { status: "done"; result: MoveResult } | null> {
+  const handle = client.retrieveWorkflow<MoveResult>(id);
+  const status = await handle.getStatus();
+  if (!status) return null;
+  if (status.status === "SUCCESS") return { status: "done", result: await handle.getResult() };
+  if (
+    status.status === "ERROR" ||
+    status.status === "CANCELLED" ||
+    status.status === "MAX_RECOVERY_ATTEMPTS_EXCEEDED"
+  ) {
+    return { status: "done", result: { ok: false, reason: "That didn't save. Try again." } };
+  }
+  return { status: "working" };
+}
+
 // ── Someone changing their own home ────────────────────────────────────────────────────
 
 export const HOME_WORKFLOW = "changeHome";
@@ -342,12 +428,12 @@ export async function registerDirectorQueue() {
   return DBOS.registerQueue(DIRECTOR_QUEUE, { workerConcurrency: 2, globalConcurrency: 4 });
 }
 
-/** A new player: their world's director gives them something to do now (once per player). */
+/** A player with nothing to do: their world's director gives them something now. */
 export async function enqueueWelcome(
   client: DBOSClient,
   worldId: string,
   userId: string,
-  /** Once per key (a city day). */
+  /** Once per key (a city day, or the thread they just ended). */
   key: string,
 ) {
   const job = DirectorJob.parse({ worldId, welcome: userId });

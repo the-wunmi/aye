@@ -1,3 +1,4 @@
+/** Blending positions between snapshots, including when the number of people changes. */
 import { describe, expect, it } from "vitest";
 import { interpolatePositions } from "../src/interpolate.ts";
 

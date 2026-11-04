@@ -1,3 +1,7 @@
+/**
+ * Tests for the world harness without a model: `keyOf`, `compileWorld`, the authoring loop,
+ * `improvise` and dressing a place.
+ */
 import { hashJson, MemoryArtifactStore, MemoryRecipeIndex } from "@aye/artifacts";
 import { WORLD_BOUNDS, WorldSpec } from "@aye/schema";
 import { sampleFlat, sampleSettings, sampleSpec } from "@aye/schema/fixtures";

@@ -45,14 +45,17 @@ export type FrameSet = z.infer<typeof FrameSet>;
 
 declare const redacted: unique symbol;
 /**
- * Frames with people and number plates removed. Only this type may be handed to external
- * model providers or used for generated assets; the type system enforces it at call sites.
+ * Frames with every private box hidden (`pixelRedactor`). Only this type may be handed to model
+ * providers after the segmenter, or used for generated assets; the types enforce it at call sites.
  */
 export type RedactedFrameSet = FrameSet & { readonly [redacted]: true };
 
 // ── Segmentation and tracking (e.g. SAM 3.x) ───────────────────────────────────────
 
-/** Classes that must always be removed before anything leaves our infrastructure. */
+/**
+ * Names for what counts as private. Nothing reads this list at runtime: what gets found is up to
+ * the segmenter (`metaSegmenter` asks for faces and license plates).
+ */
 export const PRIVATE_CLASSES = [
   "person",
   "face",
@@ -69,7 +72,7 @@ export const Track = z.strictObject({
   private: z.boolean(),
   frameStart: z.int().nonnegative(),
   frameEnd: z.int().nonnegative(),
-  /** Mask video or per-frame mask archive. */
+  /** The segmenter's raw output this detection came from. */
   masks: ArtifactRef,
   /** Best single frame for cropping this object, and its box in pixels [x, y, w, h]. */
   bestFrame: z.int().nonnegative(),
@@ -144,7 +147,10 @@ export const SceneUnderstanding = z.strictObject({
   objects: z
     .array(
       z.strictObject({
-        /** Links to the segmenter's track, which anchors identity across re-runs. */
+        /**
+         * The object's number in this answer: its id derives from it, and one that matches a
+         * private track is dropped in assembly.
+         */
         trackId: z.int().nonnegative().max(1_000_000),
         label: Label.min(1),
         spaceKey: ModelKey.nullable(),
@@ -189,10 +195,6 @@ export const WorldBrief = z.strictObject({
   city: z.string().max(300),
   /** A real place someone filmed: it holds only what's really there, and who they say is. */
   filmed: z.boolean().default(false),
-  /**
-   * The needs everyone in the city has. When present, the world uses exactly these keys (and
-   * may add a few of its own); people carry them from place to place.
-   */
   /** What stays with people wherever they go: use these, and add none. */
   marks: z
     .array(
@@ -200,6 +202,10 @@ export const WorldBrief = z.strictObject({
     )
     .max(16)
     .default([]),
+  /**
+   * The needs everyone in the city has. When present, the world uses exactly these keys (and
+   * may add a few of its own); people carry them from place to place.
+   */
   needs: z
     .array(
       z.strictObject({
@@ -440,7 +446,7 @@ export type CityBrief = z.infer<typeof CityBrief>;
 const Hex = z.string().max(16);
 const Xz = z.tuple([Int, Int]);
 
-/** A tap target, flat: `target` names an app, a place or a panel for open_app, show_place, panel. */
+/** A tap target, flat: `target` names an app, place or panel for open_app, show_place, panel. */
 export const DraftIntent = z.strictObject({
   do: z.enum(["none", "open_app", "show_place", "map", "panel", "tour"]),
   target: Name,
@@ -577,7 +583,7 @@ export const DraftCityKind = z.strictObject({
   area: z.strictObject({ blocks: z.boolean() }).nullable(),
   line: z.strictObject({ widthM: Int }).nullable(),
   prop: z.boolean(),
-  /** The model's own fields: names and short values, for its own use and for display. */
+  /** The model's own fields: names and short values, for its own use. Nothing runs on them. */
   attrs: z.array(z.strictObject({ name: Name, value: Line })).max(12),
 });
 export type DraftCityKind = z.infer<typeof DraftCityKind>;

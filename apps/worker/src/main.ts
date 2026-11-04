@@ -1,6 +1,7 @@
 /**
- * Worker process: hosts the durable compile workflows (DBOS on Postgres). The only
- * infrastructure is Postgres plus object storage.
+ * Worker process: hosts the durable workflows (DBOS on Postgres) for cities, places, filmed
+ * places, asks, moves, homes, questions, conversations and each world's director. The only
+ * infrastructure is Postgres plus the artifact store on disk.
  */
 
 import { fileURLToPath } from "node:url";
@@ -22,10 +23,12 @@ import {
   museLookCritic,
   museLookDesigner,
   musePainter,
+  museReconstructPlanner,
   museWorldAgent,
   museWorldAuthor,
   overpassSource,
   pixelRedactor,
+  reconstructorFrom,
 } from "@aye/pipeline";
 import { DBOS } from "@dbos-inc/dbos-sdk";
 import { z } from "zod";
@@ -45,8 +48,10 @@ import {
   registerDirectorQueue,
   registerDirectorWorkflow,
   registerHomeWorkflow,
+  registerMoveWorkflow,
   registerQuestionQueue,
   registerQuestionWorkflow,
+  registerRemoveWorkflow,
   scheduleDirectors,
 } from "./workflows.ts";
 
@@ -132,6 +137,8 @@ registerHomeWorkflow({
   changer: museHomeChanger({ ...museConfigFrom(process.env), effort: "low" }),
   signal: controller.signal,
 });
+registerMoveWorkflow({ db, store });
+registerRemoveWorkflow({ db, store });
 registerAskWorkflow({
   db,
   store,
@@ -157,6 +164,7 @@ const director =
         signal: controller.signal,
       })
     : null;
+const reconstructor = reconstructorFrom(process.env);
 registerCaptureWorkflow({
   db,
   store,
@@ -167,6 +175,14 @@ registerCaptureWorkflow({
     joiner: museCityJoiner({ ...museConfigFrom(process.env), effort: "low" }),
     furnisher: museFurnisher({ ...museConfigFrom(process.env), effort: "low" }),
     painter: musePainter({ ...museConfigFrom(process.env), effort: "low" }),
+    ...(reconstructor
+      ? {
+          rebuilder: {
+            reconstructor,
+            planner: museReconstructPlanner({ ...museConfigFrom(process.env), effort: "low" }),
+          },
+        }
+      : {}),
   },
   signal: controller.signal,
 });

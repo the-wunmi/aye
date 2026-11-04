@@ -7,10 +7,11 @@
  * a door swung out while open). Nothing here knows what any thing is. The style is a clean,
  * toy-like representation: flat colours, soft light, real proportions, nothing photoreal.
  *
- * Walls between the camera and the middle of the place drop to stubs (the Sims "cutaway").
+ * Walls drop to stubs so the inside can be seen: all of them when the whole place is in view,
+ * those between the camera and the person it follows otherwise.
  * Clicks become intents for the game to send: a thing (show what it can do), a person (take
- * them over), the floor (walk there). When editing is on, things can be dragged (5 cm snap,
- * swept against placement physics) and turned; the renderer only *proposes* moves (`onMove`).
+ * them over), the floor (walk there). A thing picked up can be dragged (5 cm snap), with its
+ * ring saying whether it can stay; the renderer only ever *proposes* where it goes.
  * People are drawn per simulation slot, so they come and go as the server says.
  *
  * WebGPU first (`three/webgpu` falls back to WebGL2). Rendering may use floating-point maths
@@ -27,14 +28,23 @@ import {
 } from "@aye/schema";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
+import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import { ao } from "three/addons/tsl/display/GTAONode.js";
 import { builtinAOContext, mrt, normalView, pass, screenUV } from "three/tsl";
 import * as THREE from "three/webgpu";
 import { interpolatePositions } from "./interpolate.ts";
 import { fitInto, getLibrary, type Library } from "./library.ts";
 import { createLivePerson, type Person } from "./people.ts";
+import {
+  CAMERA_DAMPING,
+  PLACE_LOOKS,
+  type PlaceLook,
+  qualityGovernor,
+  startingLevel,
+} from "./quality.ts";
 import { primitiveGeometry } from "./solids.ts";
 import { startRenderer } from "./start-renderer.ts";
+import { type Footing, type Predicted, predict } from "./steer.ts";
 
 const MM = 1 / 1000;
 
@@ -45,6 +55,9 @@ export interface SpotMark {
   radiusMm: number;
   aboveFloorMm?: number;
 }
+
+/** A box's faces in three.js order (+x, -x, +y, -y, +z, -z), as turns bringing +z round to them. */
+const FACE_YAW = [Math.PI / 2, -Math.PI / 2, 0, 0, 0, Math.PI];
 
 /** How much floor or wall one repeat of a filmed place's picture of it covers, in metres. */
 const PHOTO_TILE_M = 1.5;
@@ -152,6 +165,12 @@ const TOUCH_AROUND: readonly (readonly [number, number])[] = [
 ];
 /** How far above someone's feet the follow camera looks. */
 const FOLLOW_AIM_M = 1.2;
+/** How closely the follow camera keeps up, per second: close enough to feel attached to them. */
+const FOLLOW_PER_S = 7;
+/** How quickly people are drawn catching up with where they are, per second. */
+const PEOPLE_EASE_PER_S = 12;
+/** Further than this between one update and the next isn't walking: draw it as it is. */
+const PEOPLE_JUMP_MM = 2_500;
 
 export interface AgentFrame {
   /** x, z per person in mm. */
@@ -172,7 +191,7 @@ export interface StateFrame {
   resourcesOn: Uint8Array;
 }
 
-/** Where each thing's vars live in `thingVars`, and which kind it is. From the worker. */
+/** Where each thing's vars live in `thingVars`, and which kind it is. From the realm server. */
 export interface ThingLayout {
   id: string;
   kind: string;
@@ -195,15 +214,42 @@ export interface Renderer {
   setPeople(people: readonly (PersonDef | null)[]): void;
   /** The slot of the person the player is (ringed), or null. */
   setYou(slot: number | null): void;
-  /** Sun, sky and light for this minute of the city's day. */
-  /** Light for this minute, by the city's sunrise and sunset (absent: a default day). */
+  /** Sun, sky and light for this minute, by the city's sunrise and sunset (absent: a default). */
   setTime(minuteOfDay: number, sun?: Sun): void;
   /** The ground around the place, in the city's land colour. */
   setSurroundings(colour: string): void;
   /** Keep the camera on this person (a slot), closer in; null for the whole place. */
   follow(slot: number | null): void;
-  /** Allow dragging things (an owner editing their place). Off by default. */
-  setEditable(on: boolean): void;
+  /** Where someone can stand, for walking your own character before the server answers. */
+  setFooting(fits: Footing): void;
+  /** Walk this person now, on this device only; a null way stops them. */
+  steer(slot: number | null, way: { dx: number; dz: number; speedMmPerS: number } | null): void;
+  /** Mark these things as ones that can be moved, or nothing. */
+  setMovable(objects: readonly string[]): void;
+  /** How it's keeping up: for looking at on a real device. */
+  speed(): {
+    fps: number;
+    level: number;
+    drawCalls: number;
+    triangles: number;
+    you: { xMm: number; zMm: number } | null;
+  };
+  /**
+   * Rearranging: pressing a thing `grab` accepts picks it up and dragging slides it, with what
+   * rests on it. Pressing anything else moves the camera as usual. Null ends it.
+   */
+  setRearranging(
+    rules: {
+      grab(object: string): string | null;
+      carried(object: string): readonly string[];
+    } | null,
+  ): void;
+  /** Stand these things where they say, without redrawing the place: a draft, undone at will. */
+  placeThings(objects: readonly Scene["objects"][number][]): void;
+  /** A thing was dragged and let go here. A proposal: nothing has moved until the place says. */
+  onDrop(
+    listener: (object: string, to: { xMm: number; zMm: number; yawDeg: number }) => void,
+  ): void;
   /** Push the latest sim frame; positions are interpolated from the previous one. */
   setAgents(frame: AgentFrame): void;
   /** Push the latest thing and resource state; looks follow it. */
@@ -231,8 +277,6 @@ export interface Renderer {
   /** Where on the canvas (CSS pixels) a person's head or a thing's top is, or null. */
   screenOfPerson(slot: number): { x: number; y: number } | null;
   screenOfThing(objectId: string): { x: number; y: number } | null;
-  /** The user dragged a thing to a new floor position (mm). A proposal, not a fact. */
-  onMove(listener: (objectId: string, xMm: number, zMm: number) => void): void;
   resize(): void;
   dispose(): void;
 }
@@ -344,7 +388,11 @@ export async function createRenderer(
   const renderer = await startRenderer(canvas);
   const backendInfo = renderer.backend as { isWebGPUBackend?: boolean };
   const backend = backendInfo.isWebGPUBackend ? "webgpu" : "webgl2";
-  renderer.setPixelRatio(Math.min(2, globalThis.devicePixelRatio || 1));
+  const governor = qualityGovernor(startingLevel(), PLACE_LOOKS.length - 1);
+  const lookNow = () => PLACE_LOOKS[governor.level] as PlaceLook;
+  const pixelRatioFor = (look: PlaceLook) =>
+    Math.min(look.maxPixelRatio, globalThis.devicePixelRatio || 1);
+  renderer.setPixelRatio(pixelRatioFor(lookNow()));
   renderer.toneMapping = THREE.NeutralToneMapping;
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = THREE.PCFShadowMap;
@@ -353,6 +401,7 @@ export async function createRenderer(
   const camera = new THREE.PerspectiveCamera(35, 1, 0.1, 600);
   const controls = new OrbitControls(camera, canvas);
   controls.enableDamping = true;
+  controls.dampingFactor = CAMERA_DAMPING;
   controls.minDistance = 3;
   controls.maxDistance = 120;
   controls.minPolarAngle = 0.25;
@@ -369,7 +418,8 @@ export async function createRenderer(
   scene.add(hemi);
   const sun = new THREE.DirectionalLight(0xffe7c4, 2.2);
   sun.castShadow = true;
-  sun.shadow.mapSize.set(2048, 2048);
+  // A phone's small screen can't show what a bigger map would add.
+  sun.shadow.mapSize.setScalar(startingLevel() > 0 ? 1024 : 2048);
   sun.shadow.bias = -0.0004;
   sun.shadow.normalBias = 0.03;
   scene.add(sun, sun.target);
@@ -393,7 +443,7 @@ export async function createRenderer(
   /** Sun, sky and light follow the city's clock: low warm sun at dawn and dusk, night blue. */
   function setTime(minuteOfDay: number, sunTimes?: Sun): void {
     const phase = dayPhase(sunTimes, minuteOfDay);
-    // 0 at night, rising through the morning to 1 at noon; dusk lingers a little.
+    // 0 at night, rising through the morning to 1 at noon.
     const day = Math.max(0, Math.sin(phase * Math.PI));
     const golden = Math.max(0, 1 - day * 2.2);
     // Night is a blue hour, not a blackout: cool, bright enough to play by, lights glowing.
@@ -424,6 +474,7 @@ export async function createRenderer(
   // Soft ambient occlusion (GTAO) where supported; plain rendering otherwise.
   let pipeline: THREE.RenderPipeline | null = null;
   try {
+    if (!lookNow().ambientOcclusion) throw new Error("not at this level");
     pipeline = new THREE.RenderPipeline(renderer);
     // Depth and normals for occlusion, without multisampling (GTAO reads plain depth).
     const prePass = pass(scene, camera, { samples: 0 });
@@ -688,6 +739,39 @@ export async function createRenderer(
     world.add(crossings);
   }
 
+  const meshLoader = new GLTFLoader();
+  const meshes = new Map<string, Promise<THREE.Group | null>>();
+  /** A rebuilt thing's model: a fresh copy each time, because one place can have it twice. */
+  async function rebuilt(hash: string): Promise<THREE.Object3D | null> {
+    let p = meshes.get(hash);
+    if (!p) {
+      const url = opts.artifactUrl?.(hash);
+      p = url
+        ? meshLoader.loadAsync(url).then(
+            (g) => g.scene,
+            () => null,
+          )
+        : Promise.resolve(null);
+      meshes.set(hash, p);
+    }
+    const scene = await p;
+    if (!scene) return null;
+    const copy = scene.clone(true);
+    copy.traverse((c) => {
+      const m = c as THREE.Mesh;
+      if (m.isMesh) {
+        m.castShadow = true;
+        m.receiveShadow = true;
+        // These files don't say how metallic they are, and glTF's default is entirely. Everything
+        // in a room seen on film has its light already in its picture: nothing here is a mirror.
+        for (const material of [m.material].flat()) {
+          (material as THREE.MeshStandardMaterial).metalness = 0;
+        }
+      }
+    });
+    return copy;
+  }
+
   /** A picture of the real thing (an artifact), once loaded; null if it can't be. */
   const pictures = new Map<string, Promise<THREE.Texture | null>>();
   function picture(hash: string): Promise<THREE.Texture | null> {
@@ -860,7 +944,6 @@ export async function createRenderer(
     for (const g of [...trims, ...panes]) g.dispose();
   }
 
-  /** A thing, drawn from its kind's look: each shape placed relative to the thing's size. */
   /**
    * Which side of a thing faces the room (a box face: +x -x +z -z): of its long sides (or all
    * four, if it's about square), the one pointing most toward the middle of the place. Looking
@@ -897,6 +980,7 @@ export async function createRenderer(
     return best;
   }
 
+  /** A thing, drawn from its kind's look: each shape placed relative to the thing's size. */
   function buildThing(o: Scene["objects"][number]): ThingView {
     const root = new THREE.Group();
     const [x, above, z] = o.transform.position;
@@ -960,33 +1044,58 @@ export async function createRenderer(
       modelled: false,
       back: upperCentre(root, root),
     };
-    const front = thingDef?.front;
-    if (front) {
-      // The real thing: a box wearing a picture of its front, on the side facing the room.
-      const at = generation;
-      const topHash = thingDef?.top;
-      void Promise.all([picture(front), topHash ? picture(topHash) : null]).then(
-        ([tex, topTex]) => {
-          if (!tex || at !== generation) return;
-          root.add(pictureBox(tex, w, h, d, faceTowardRoom(o, w, d), topTex));
-          view.modelled = true;
-          hideOverhead(root);
-          if (lastState) applyState(lastState);
-          else for (const sv of shapes) if (sv.base) sv.mesh.visible = false;
-        },
-      );
-    } else if (kind?.asset && library) {
-      const at = generation;
+    const at = generation;
+    const drawn = (added: THREE.Object3D, back?: [number, number] | null) => {
+      root.add(added);
+      view.modelled = true;
+      if (back !== undefined) view.back = back;
+      hideOverhead(root);
+      if (lastState) applyState(lastState);
+      else for (const sv of shapes) if (sv.base) sv.mesh.visible = false;
+    };
+    const fromLibrary = () => {
+      if (!kind?.asset || !library) return;
       void library.thing(kind.asset).then((model) => {
         if (!model || at !== generation) return;
         const fitted = fitInto(model, w, h, d);
         root.add(fitted);
-        view.modelled = true;
-        view.back = upperCentre(fitted, root);
-        hideOverhead(root);
-        if (lastState) applyState(lastState);
-        else for (const sv of shapes) if (sv.base) sv.mesh.visible = false;
+        drawn(fitted, upperCentre(fitted, root));
       });
+    };
+    const fromPicture = () => {
+      const front = thingDef?.front;
+      if (!front) {
+        fromLibrary();
+        return;
+      }
+      // The real thing: a box wearing a picture of its front, on the side facing the room.
+      const topHash = thingDef?.top;
+      void Promise.all([picture(front), topHash ? picture(topHash) : null]).then(
+        ([tex, topTex]) => {
+          if (!tex || at !== generation) return;
+          drawn(pictureBox(tex, w, h, d, faceTowardRoom(o, w, d), topTex));
+        },
+      );
+    };
+    // The real thing rebuilt in 3D, if it was and it loads; failing that, whatever it had before.
+    const meshHash = thingDef?.mesh;
+    if (meshHash) {
+      void rebuilt(meshHash).then((model) => {
+        if (at !== generation) return;
+        if (!model) {
+          fromPicture();
+          return;
+        }
+        // Rebuilt things face +z. Turn that to the side you can walk up to, then fit it.
+        const facing = new THREE.Group();
+        facing.add(model);
+        facing.rotation.y = FACE_YAW[faceTowardRoom(o, w, d)] ?? 0;
+        const fitted = fitInto(facing, w, h, d);
+        root.add(fitted);
+        drawn(fitted, upperCentre(fitted, root));
+      });
+    } else {
+      fromPicture();
     }
     return view;
   }
@@ -1029,6 +1138,8 @@ export async function createRenderer(
     generation++;
     if (opts.things) layout = new Map(opts.things.map((t, index) => [t.id, { ...t, index }]));
     if (opts.resources) resourceKeys = opts.resources;
+    moving = null;
+    setMovable([]);
     clearGroup(world);
     clearGroup(thingsGroup);
     wallMesh = null;
@@ -1065,6 +1176,13 @@ export async function createRenderer(
   let nextAt = 0;
   let frameGap = 1000 / 30;
   let interpolated = new Float32Array(0);
+  /** Where each person is drawn: following `interpolated`, without its hops. */
+  let shown = new Float32Array(0);
+  /** Who's being steered from here, which way, and where this device has walked them. */
+  let steerSlot: number | null = null;
+  let steering: { dx: number; dz: number; speedMmPerS: number } | null = null;
+  let predicted: Predicted | null = null;
+  let footing: Footing = () => true;
   let lastDraw = performance.now();
   let you: number | null = null;
   const youRing = new THREE.Mesh(new THREE.RingGeometry(0.32, 0.4, 48), selectionMaterial);
@@ -1112,7 +1230,8 @@ export async function createRenderer(
 
   function setAgents(f: AgentFrame): void {
     const now = performance.now();
-    if (next) frameGap = Math.min(400, Math.max(8, now - nextAt));
+    // Averaged, because one late update shouldn't change the pace of everyone on screen.
+    if (next) frameGap += (Math.min(400, Math.max(8, now - nextAt)) - frameGap) * 0.2;
     prev = next && next.length === f.positions.length ? next : f.positions;
     next = f.positions;
     poses = f.poses;
@@ -1271,6 +1390,19 @@ export async function createRenderer(
   function updatePeople(dt: number): void {
     if (!prev || !next) return;
     interpolatePositions(prev, next, (performance.now() - nextAt) / frameGap, interpolated);
+    // Updates arrive a few times a second and never quite on time: drawing them as they come is
+    // a walk in hops. Everyone eases towards where they should be; a real jump stays a jump.
+    if (shown.length !== interpolated.length) shown = interpolated.slice();
+    const ease = 1 - Math.exp(-dt * PEOPLE_EASE_PER_S);
+    for (let i = 0; i + 1 < shown.length; i += 2) {
+      const tx = interpolated[i] as number;
+      const tz = interpolated[i + 1] as number;
+      const sx = shown[i] as number;
+      const sz = shown[i + 1] as number;
+      const far = Math.hypot(tx - sx, tz - sz) > PEOPLE_JUMP_MM;
+      shown[i] = far ? tx : sx + (tx - sx) * ease;
+      shown[i + 1] = far ? tz : sz + (tz - sz) * ease;
+    }
     // Who rests on each thing, in slot order, so they share it side by side.
     const sharing = new Map<string, number[]>();
     using.forEach((id, i) => {
@@ -1279,9 +1411,16 @@ export async function createRenderer(
     const borrowed = borrowSeats();
     people.forEach((p, i) => {
       if (!p) return;
-      const x = interpolated[i * 2] as number;
-      const z = interpolated[i * 2 + 1] as number;
-      const spot = restingSpot(i, sharing, borrowed);
+      let x = shown[i * 2] as number;
+      let z = shown[i * 2 + 1] as number;
+      if (i === steerSlot) {
+        predicted = predict(predicted, { x, z }, steering, dt, footing);
+        if (predicted) {
+          x = predicted.x;
+          z = predicted.z;
+        }
+      }
+      const spot = i === steerSlot && predicted ? null : restingSpot(i, sharing, borrowed);
       if (spot) {
         p.person.update(spot.x * MM, spot.y, spot.z * MM, dt, spot.pose, spot.face);
       } else {
@@ -1310,7 +1449,47 @@ export async function createRenderer(
   let selected: string | null = null;
   let selectionRing: THREE.Mesh | null = null;
   const selectListeners: ((id: string | null) => void)[] = [];
-  const moveListeners: ((id: string, x: number, z: number) => void)[] = [];
+
+  /** The ring round what's selected or in hand: its colour says if it fits, and nothing else's. */
+  const holdMaterial = new THREE.MeshBasicNodeMaterial({
+    color: 0x2f6fde,
+    transparent: true,
+    opacity: 0.85,
+    depthWrite: false,
+    depthTest: false,
+  });
+  const movableGroup = new THREE.Group();
+  scene.add(movableGroup);
+  const movableMaterial = new THREE.MeshBasicNodeMaterial({
+    color: 0x2f6fde,
+    transparent: true,
+    opacity: 0.32,
+    depthWrite: false,
+    depthTest: false,
+  });
+  function setMovable(objects: readonly string[]): void {
+    for (const c of [...movableGroup.children]) {
+      movableGroup.remove(c);
+      (c as THREE.Mesh).geometry.dispose();
+    }
+    for (const id of objects) {
+      const o = loaded?.objects.find((ob) => ob.id === id);
+      const root = thingViews.get(id)?.root;
+      if (!o || !root) continue;
+      // Its own footprint, so a glance says what can be moved and how much of the floor it takes.
+      const patch = new THREE.Mesh(
+        new THREE.PlaneGeometry(Math.max(0.3, o.size.w * MM), Math.max(0.3, o.size.d * MM)),
+        movableMaterial,
+      );
+      patch.rotation.order = "YXZ";
+      patch.rotation.x = -Math.PI / 2;
+      patch.rotation.y = root.rotation.y;
+      patch.position.set(root.position.x, root.position.y + 0.02, root.position.z);
+      patch.renderOrder = 9;
+      patch.userData["thing"] = id;
+      movableGroup.add(patch);
+    }
+  }
 
   function setSelected(id: string | null): void {
     selected = id;
@@ -1323,15 +1502,16 @@ export async function createRenderer(
     const root = id ? thingViews.get(id)?.root : undefined;
     if (!o || !root) return;
     const r = Math.hypot(o.size.w, o.size.d) * MM * 0.55;
-    selectionRing = new THREE.Mesh(new THREE.RingGeometry(r, r + 0.05, 64), selectionMaterial);
+    selectionRing = new THREE.Mesh(new THREE.RingGeometry(r, r + 0.05, 64), holdMaterial);
     selectionRing.rotation.x = -Math.PI / 2;
     selectionRing.position.set(root.position.x, root.position.y + 0.015, root.position.z);
+    selectionRing.renderOrder = 10;
     scene.add(selectionRing);
   }
 
   function showSpot(xMm: number, zMm: number): void {
-    // The whole place stays in view, seen from the spot's side: walls on the camera's side are
-    // the ones cut away, so what's between you and it is gone.
+    // The whole place stays in view, seen from the spot's side: the walls are cut by where the
+    // camera now is, so what's between you and it is gone.
     const centre = bounds.getCenter(new THREE.Vector3());
     const side = new THREE.Vector3(xMm * MM, 0, zMm * MM).sub(centre).setY(0);
     if (side.lengthSq() < 0.25) return;
@@ -1414,11 +1594,81 @@ export async function createRenderer(
     floorY: number;
     /** Where this thing may stand; built once per drag. */
     allowed: ((xMm: number, zMm: number, yawDeg: number) => boolean) | null;
-    yawDeg: number;
   }
   let press: Press | null = null;
   let placementCheck: PlacementCheck | null = null;
-  let editable = false;
+  let rearranging: {
+    grab(object: string): string | null;
+    carried(object: string): readonly string[];
+  } | null = null;
+  const dropListeners: ((
+    object: string,
+    to: { xMm: number; zMm: number; yawDeg: number },
+  ) => void)[] = [];
+  /** What's picked up, how it's turned, and what rides on it (each as it was when picked up). */
+  let moving: {
+    id: string;
+    yawDeg: number;
+    fits: boolean;
+    /** Let go and waiting on the place: not to be picked up again until it answers. */
+    settled: boolean;
+    from: { x: number; z: number; yawDeg: number };
+    riders: { root: THREE.Object3D; x: number; z: number; rotation: number }[];
+    allowed: ((xMm: number, zMm: number, yawDeg: number) => boolean) | null;
+  } | null = null;
+
+  /** Riders go where the thing's turn and shift take them; the ring goes with it. */
+  function placeMoving(): void {
+    if (!moving) return;
+    const root = thingViews.get(moving.id)?.root;
+    if (!root) return;
+    root.rotation.y = (-moving.yawDeg * Math.PI) / 180;
+    const turn = ((moving.yawDeg - moving.from.yawDeg) * Math.PI) / 180;
+    const cos = Math.cos(turn);
+    const sin = Math.sin(turn);
+    for (const r of moving.riders) {
+      const dx = r.x - moving.from.x;
+      const dz = r.z - moving.from.z;
+      r.root.position.x = root.position.x + dx * cos - dz * sin;
+      r.root.position.z = root.position.z + dx * sin + dz * cos;
+      r.root.rotation.y = r.rotation - turn;
+    }
+    if (selectionRing) {
+      selectionRing.position.set(root.position.x, root.position.y + 0.015, root.position.z);
+    }
+    for (const c of movableGroup.children) {
+      if (c.userData["thing"] !== moving.id) continue;
+      c.position.x = root.position.x;
+      c.position.z = root.position.z;
+      c.rotation.y = root.rotation.y;
+    }
+    holdMaterial.color.setHex(moving.fits ? 0x2f6fde : 0xe5484d);
+  }
+
+  function setMoving(object: string | null, carried: readonly string[] = []): void {
+    const root = object ? thingViews.get(object)?.root : undefined;
+    if (!object || !root) {
+      moving = null;
+      setSelected(null);
+      holdMaterial.color.setHex(0x2f6fde);
+      return;
+    }
+    const o = loaded?.objects.find((x) => x.id === object);
+    const yawDeg = Math.round(o?.transform.yawDeg ?? 0);
+    moving = {
+      id: object,
+      yawDeg,
+      fits: true,
+      settled: false,
+      from: { x: root.position.x, z: root.position.z, yawDeg },
+      riders: carried.flatMap((id) => {
+        const r = thingViews.get(id)?.root;
+        return r ? [{ root: r, x: r.position.x, z: r.position.z, rotation: r.rotation.y }] : [];
+      }),
+      allowed: placementCheck ? placementCheck(object) : null,
+    };
+    setSelected(object);
+  }
   let hovered: string | null = null;
   let hoverEvent: PointerEvent | null = null;
   let hoverQueued = false;
@@ -1453,20 +1703,26 @@ export async function createRenderer(
       controls.enabled = true;
       return;
     }
-    const id = thingAt(e);
+    if (moving?.settled) return;
+    if (rearranging && !moving) {
+      const touched = thingAt(e) ?? (e.pointerType === "touch" ? nearby(e, thingAt) : null);
+      const grabbed = touched ? rearranging.grab(touched) : null;
+      if (grabbed) setMoving(grabbed, rearranging.carried(grabbed));
+    }
+    if (moving) ray(e);
+    const id = moving ? moving.id : thingAt(e);
     const root = id ? thingViews.get(id)?.root : undefined;
     let offset = new THREE.Vector3();
     const floorY = root?.position.y ?? 0;
-    if (root && editable) {
-      // Grabbing a thing must not also orbit the camera.
+    if (root && moving) {
+      // Placing a thing must not also orbit the camera.
       controls.enabled = false;
       const plane = new THREE.Plane(new THREE.Vector3(0, 1, 0), -floorY);
       const hit = raycaster.ray.intersectPlane(plane, new THREE.Vector3());
       if (hit) offset = hit.sub(root.position);
     }
-    const yawDeg = loaded?.objects.find((o) => o.id === id)?.transform.yawDeg ?? 0;
-    const allowed = id && placementCheck ? placementCheck(id) : null;
-    press = { x: e.clientX, y: e.clientY, id, dragging: false, offset, floorY, allowed, yawDeg };
+    const allowed = moving?.allowed ?? null;
+    press = { x: e.clientX, y: e.clientY, id, dragging: false, offset, floorY, allowed };
   };
   const onPointerMove = (e: PointerEvent) => {
     if (!press && e.target === canvas && e.pointerType !== "touch") {
@@ -1484,7 +1740,7 @@ export async function createRenderer(
         });
       }
     }
-    if (!press?.id || !editable) return;
+    if (!press?.id || !moving) return;
     if (
       !press.dragging &&
       Math.hypot(e.clientX - press.x, e.clientY - press.y) < DRAG_THRESHOLD_PX
@@ -1502,60 +1758,54 @@ export async function createRenderer(
       x: Math.round((p.x * 1000) / SNAP_MM) * SNAP_MM,
       z: Math.round((p.z * 1000) / SNAP_MM) * SNAP_MM,
     };
-    // Sweep toward the pointer in small steps so nothing tunnels through a wall between two
-    // pointer events; at each step go straight, else slide along what's in the way, else stop.
-    const ok = (x: number, z: number) => !press?.allowed || press.allowed(x, z, press.yawDeg);
-    let x = Math.round(root.position.x * 1000);
-    let z = Math.round(root.position.z * 1000);
-    const steps = Math.ceil(Math.hypot(want.x - x, want.z - z) / SNAP_MM);
-    let blocked = false;
-    for (let i = 0; i < steps && (x !== want.x || z !== want.z); i++) {
-      const dx = Math.sign(want.x - x) * Math.min(SNAP_MM, Math.abs(want.x - x));
-      const dz = Math.sign(want.z - z) * Math.min(SNAP_MM, Math.abs(want.z - z));
-      const step = [
-        { x: x + dx, z: z + dz },
-        { x: x + dx, z },
-        { x, z: z + dz },
-      ].find((c) => (c.x !== x || c.z !== z) && ok(c.x, c.z));
-      if (!step) {
-        blocked = true;
-        break;
-      }
-      if (step.x !== x + dx || step.z !== z + dz) blocked = true;
-      x = step.x;
-      z = step.z;
-    }
-    selectionMaterial.color.setHex(blocked ? 0xe5484d : 0x2f6fde);
+    // It follows the finger wherever it goes, past whatever's in the way: things filmed
+    // overlapping must be able to get out, and only where it's put down has to work. The ring
+    // says so as it goes.
+    const { x, z } = want;
+    const yawDeg = moving.yawDeg;
+    const ok = (ax: number, az: number) => !press?.allowed || press.allowed(ax, az, yawDeg);
     root.position.x = x / 1000;
     root.position.z = z / 1000;
-    if (selectionRing && selected === press.id) {
-      selectionRing.position.set(root.position.x, root.position.y + 0.015, root.position.z);
-    }
+    moving.fits = ok(x, z);
+    placeMoving();
   };
   const onPointerCancel = (e: PointerEvent) => {
     fingers.delete(e.pointerId);
     press = null;
     controls.enabled = true;
-    selectionMaterial.color.setHex(0x2f6fde);
+    if (moving) placeMoving();
   };
   const onPointerUp = (e: PointerEvent) => {
     fingers.delete(e.pointerId);
     const p = press;
     press = null;
     controls.enabled = true;
-    selectionMaterial.color.setHex(0x2f6fde);
+    if (moving && !moving.settled) {
+      placeMoving();
+      if (!p?.dragging) {
+        // A tap, not a move: it's only been pointed at.
+        const tapped = moving.id;
+        setMoving(null);
+        for (const l of selectListeners) l(tapped);
+        return;
+      }
+      const root = thingViews.get(moving.id)?.root;
+      if (!root) return;
+      moving.settled = true;
+      const to = {
+        xMm: Math.round(root.position.x * 1000),
+        zMm: Math.round(root.position.z * 1000),
+        yawDeg: moving.yawDeg,
+      };
+      for (const l of dropListeners) l(moving.id, to);
+      return;
+    }
     if (!p) return;
     const touch = e.pointerType === "touch";
     const clicked =
       !p.dragging &&
       Math.hypot(e.clientX - p.x, e.clientY - p.y) < (touch ? TOUCH_TAP_PX : DRAG_THRESHOLD_PX);
-    if (p.dragging && p.id) {
-      const root = thingViews.get(p.id)?.root;
-      if (!root) return;
-      const xMm = Math.round(root.position.x * 1000);
-      const zMm = Math.round(root.position.z * 1000);
-      for (const l of moveListeners) l(p.id, xMm, zMm);
-    } else if (clicked) {
+    if (clicked) {
       const slot = p.id ? null : (personAt(e) ?? (touch ? nearby(e, personAt) : null));
       if (slot !== null) {
         for (const l of personListeners) l(slot);
@@ -1583,8 +1833,22 @@ export async function createRenderer(
   resizeObserver.observe(canvas);
   resize();
 
+  let frameCount = 0;
   renderer.setAnimationLoop(() => {
     const now = performance.now();
+    if (governor.frame(now - lastDraw)) {
+      const look = lookNow();
+      // Once off it stays off, even if the governor steps back to a level that has it.
+      if (!look.ambientOcclusion && pipeline) {
+        pipeline.dispose();
+        pipeline = null;
+      }
+      renderer.setPixelRatio(pixelRatioFor(look));
+      resize();
+    }
+    frameCount++;
+    sun.shadow.autoUpdate = false;
+    sun.shadow.needsUpdate = frameCount % lookNow().shadowEveryFrames === 0;
     const dt = Math.min(0.1, (now - lastDraw) / 1000);
     lastDraw = now;
     if (markerMaterial.opacity > 0) {
@@ -1592,7 +1856,8 @@ export async function createRenderer(
       marker.scale.multiplyScalar(1 + dt * 0.8);
     }
     const followed = following === null ? null : people[following];
-    if (followed?.person.root.visible) {
+    // A finger on the screen has the camera: following it and them at once is what feels like drag.
+    if (followed?.person.root.visible && fingers.size === 0) {
       // Glide the view along with them, keeping the same angle and distance; aim at their
       // chest so they stand in the lower middle of the screen, clear of the HUD's top row.
       const target = followed.person.root.position
@@ -1601,7 +1866,7 @@ export async function createRenderer(
       const step = target
         .clone()
         .sub(controls.target)
-        .multiplyScalar(Math.min(1, dt * 3));
+        .multiplyScalar(1 - Math.exp(-dt * FOLLOW_PER_S));
       controls.target.add(step);
       camera.position.add(step);
     }
@@ -1668,8 +1933,49 @@ export async function createRenderer(
     setSurroundings: (colour) => {
       groundMat.color.set(colour);
     },
-    setEditable: (on) => {
-      editable = on;
+    setMovable,
+    setFooting(fits) {
+      footing = fits;
+    },
+    steer(slot, way) {
+      steerSlot = slot;
+      steering = way;
+    },
+    speed() {
+      return {
+        fps: governor.fps,
+        level: governor.level,
+        drawCalls: renderer.info.render.drawCalls,
+        triangles: renderer.info.render.triangles,
+        you: (() => {
+          const root = following === null ? null : people[following]?.person.root;
+          return root
+            ? { xMm: Math.round(root.position.x * 1000), zMm: Math.round(root.position.z * 1000) }
+            : null;
+        })(),
+      };
+    },
+    setRearranging(rules) {
+      rearranging = rules;
+      if (!rules) setMoving(null);
+    },
+    placeThings(objects) {
+      setMoving(null);
+      const byId = new Map(objects.map((o) => [o.id as string, o]));
+      if (loaded) {
+        const was = loaded;
+        loaded = { ...was, objects: was.objects.map((o) => byId.get(o.id) ?? o) };
+      }
+      for (const o of objects) {
+        const root = thingViews.get(o.id)?.root;
+        if (!root) continue;
+        const [x = 0, above = 0, z = 0] = o.transform.position;
+        root.position.set(x * MM, floorAt(x, z) + above * MM, z * MM);
+        root.rotation.y = (-o.transform.yawDeg * Math.PI) / 180;
+      }
+    },
+    onDrop: (l) => {
+      dropListeners.push(l);
     },
     setAgents,
     setState: applyState,
@@ -1682,9 +1988,6 @@ export async function createRenderer(
     rotate,
     onSelect: (l) => {
       selectListeners.push(l);
-    },
-    onMove: (l) => {
-      moveListeners.push(l);
     },
     onHover: (l) => {
       hoverListeners.push(l);

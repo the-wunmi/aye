@@ -1,3 +1,4 @@
+/** World evals: what `staticFindings` and `evaluateWorld` report as wrong with a world. */
 import type { ActionDef, WorldSpec } from "@aye/schema";
 import { sampleFlat, sampleSettings, sampleSpec } from "@aye/schema/fixtures";
 import { describe, expect, it } from "vitest";

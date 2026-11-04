@@ -1,3 +1,7 @@
+/**
+ * The public surface of @aye/pipeline. Fakes and ffmpeg have their own entry points (`./fake`,
+ * `./node`), so tests' stand-ins and node-only code stay out of this one.
+ */
 export {
   ARRANGE_VERSION,
   ArrangeAnswer,
@@ -7,7 +11,7 @@ export {
   seatsOf,
 } from "./arrange.ts";
 export * from "./ask-world.ts";
-export { ASSEMBLER_VERSION, assembleScene, cleanText } from "./assemble.ts";
+export { ASSEMBLER_VERSION, assembleScene, cleanText, isPrivateThing } from "./assemble.ts";
 export {
   authorCity,
   CITY_COMPILER_VERSION,
@@ -139,6 +143,7 @@ export {
   metaDescriber,
   metaSegmenter,
   metaUnderstander,
+  PRIVATE_CONCEPTS,
   PRIVATE_TRACK_BASE,
   parseSamOutput,
   placeToUnderstanding,
@@ -202,6 +207,8 @@ export type {
   WorldAuthor,
 } from "./providers.ts";
 export { contactSheet, type Placed, type Tile } from "./raster.ts";
+export * from "./reconstruct.ts";
+export * from "./reconstruct-providers.ts";
 export { pixelate, pixelRedactor } from "./redact.ts";
 export {
   json,

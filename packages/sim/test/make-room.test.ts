@@ -1,3 +1,4 @@
+/** The world's people give way to players, and two people at one thing don't share a spot. */
 import type { ObjectId } from "@aye/schema";
 import { sampleFlat, sampleSettings, sampleSpec } from "@aye/schema/fixtures";
 import { describe, expect, it } from "vitest";

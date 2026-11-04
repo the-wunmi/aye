@@ -16,11 +16,14 @@ import {
   getPinnedPlace,
   getWorld,
   joinWorld,
+  listRemovablePlaceKeys,
   registerUser,
+  systemGetCapture,
   systemGetWorld,
+  systemRecipesTaking,
   systemSetWorld,
 } from "@aye/db";
-import type { CityJoiner, Painter } from "@aye/pipeline";
+import type { CityJoiner, ObjectReconstructor, Painter, ReconstructPlanner } from "@aye/pipeline";
 import {
   fakeCalls,
   fakeCapture,
@@ -41,6 +44,7 @@ import { migrate } from "drizzle-orm/postgres-js/migrator";
 import postgres from "postgres";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { type CaptureJobDeps, runCaptureJob } from "../src/capture-job.ts";
+import { runRemoveJob } from "../src/remove-job.ts";
 
 const url = process.env["DATABASE_URL"];
 
@@ -286,6 +290,179 @@ describe.skipIf(!url)("filming a place into a city", () => {
       expect(await canReadArtifact(db, other, hash)).toBe(true);
     }
     expect(await canReadArtifact(db, other, filmed.video.hash)).toBe(false);
+  });
+
+  /** A real model's file, as far as anything reading it can tell. */
+  const aModel = () => {
+    const text = new TextEncoder().encode(
+      JSON.stringify({
+        accessors: [{ count: 3 }],
+        meshes: [{ primitives: [{ attributes: { POSITION: 0 } }] }],
+      }).padEnd(120, " "),
+    );
+    const bytes = new Uint8Array(20 + text.byteLength);
+    const view = new DataView(bytes.buffer);
+    view.setUint32(0, 0x46546c67, true);
+    view.setUint32(4, 2, true);
+    view.setUint32(8, bytes.byteLength, true);
+    view.setUint32(12, text.byteLength, true);
+    view.setUint32(16, 0x4e4f534a, true);
+    bytes.set(text, 20);
+    return bytes;
+  };
+  const planner: ReconstructPlanner = {
+    model: { provider: "test", model: "plan", version: "1" },
+    prompt: "plan",
+    effort: "low",
+    async plan(things) {
+      return { things: [{ n: things[0]?.n ?? 0, views: [{ frame: 0, concept: "a thing" }] }] };
+    },
+  };
+
+  it("opens first, then swaps its real things in, without losing what happened meanwhile", async () => {
+    const filmed = await film("a video worth rebuilding");
+    let openWhenAsked = false;
+    let key = "";
+    const reconstructor: ObjectReconstructor = {
+      model: { provider: "test", model: "rebuild", version: "1" },
+      async reconstruct() {
+        // It's open by now: someone could be standing in it.
+        const row = await systemGetCapture(db, filmed.id);
+        key = row?.placeKey as string;
+        openWhenAsked = row?.status === "ready";
+        return aModel();
+      },
+    };
+    const base = deps();
+    const r = await runCaptureJob(
+      { worldId: world, captureId: filmed.id, note: "", at: [32, 32] },
+      { ...base, providers: { ...base.providers, rebuilder: { planner, reconstructor } } },
+    );
+    expect(openWhenAsked).toBe(true);
+    expect(r?.placeKey).toBe(key);
+    const pinned = await getPinnedPlace(db, other, world, key);
+    const spec = WorldSpec.parse(
+      JSON.parse(
+        new TextDecoder().decode((await store.get(pinned?.spec as ArtifactHash)) as Uint8Array),
+      ),
+    );
+    const mesh = spec.things.find((t) => t.mesh)?.mesh as ArtifactHash;
+    expect(mesh).toBeTruthy();
+    expect(await canReadArtifact(db, other, mesh)).toBe(true);
+  });
+
+  it("is still a good place if rebuilding fails", async () => {
+    const filmed = await film("a video that won't rebuild");
+    const reconstructor: ObjectReconstructor = {
+      model: { provider: "test", model: "rebuild", version: "2" },
+      async reconstruct() {
+        throw new Error("reconstruct: HTTP 500");
+      },
+    };
+    const base = deps();
+    const r = await runCaptureJob(
+      { worldId: world, captureId: filmed.id, note: "", at: [34, 34] },
+      { ...base, providers: { ...base.providers, rebuilder: { planner, reconstructor } } },
+    );
+    expect(r?.placeKey).toBeTruthy();
+    expect((await systemGetCapture(db, filmed.id))?.status).toBe("ready");
+    const pinned = await getPinnedPlace(db, other, world, r?.placeKey as string);
+    expect(pinned?.spec).toBeTruthy();
+  });
+
+  it("takes a filmed place away for good, frames and all, only for those allowed", async () => {
+    const filmed = await film("a video to take back");
+    const base = deps();
+    const r = await runCaptureJob(
+      { worldId: world, captureId: filmed.id, note: "", at: [36, 36] },
+      base,
+    );
+    const key = r?.placeKey as string;
+    const pinned = await getPinnedPlace(db, other, world, key);
+    const remove = (userId: string, nonce: string) =>
+      runRemoveJob({ worldId: world, place: key, userId, nonce }, { db, store });
+    const scene = pinned?.scene as ArtifactHash;
+
+    // What was made straight from the video, frames first, including before any blurring.
+    const sampled = await systemRecipesTaking(db, filmed.video.hash);
+    const frameSet = sampled.flatMap((x) => x.jsonOutputs)[0] as ArtifactHash;
+    expect(frameSet).toBeTruthy();
+    const frameHashes = (
+      JSON.parse(new TextDecoder().decode((await store.get(frameSet)) as Uint8Array)) as {
+        frames: { image: { hash: ArtifactHash } }[];
+      }
+    ).frames.map((f) => f.image.hash);
+    expect(frameHashes.length).toBeGreaterThan(0);
+    for (const h of frameHashes) expect(await store.has(h)).toBe(true);
+
+    // Someone else in the city can't.
+    expect(await remove(other.userId, "abcdef01")).toEqual({
+      ok: false,
+      reason: "That isn't yours to remove.",
+    });
+    expect(await getPinnedPlace(db, other, world, key)).not.toBeNull();
+    expect(await store.has(filmed.video.hash)).toBe(true);
+
+    // Whoever filmed it can.
+    expect(await remove(player.userId, "abcdef02")).toMatchObject({ ok: true });
+    expect(await getPinnedPlace(db, other, world, key)).toBeNull();
+    const world2 = await systemGetWorld(db, world);
+    const city = CitySpec.parse(
+      JSON.parse(
+        new TextDecoder().decode((await store.get(world2?.city as ArtifactHash)) as Uint8Array),
+      ),
+    );
+    expect(city.items.some((i) => i.key === key)).toBe(false);
+    expect(await systemGetCapture(db, filmed.id)).toBeNull();
+    // The video, and what was made from it, are really gone.
+    expect(await store.has(filmed.video.hash)).toBe(false);
+    expect(await store.has(scene)).toBe(false);
+    expect(await store.has(frameSet)).toBe(false);
+    for (const h of frameHashes) expect(await store.has(h)).toBe(false);
+    // Nothing can replay it either.
+    expect(await systemRecipesTaking(db, filmed.video.hash)).toEqual([]);
+    expect(await canReadArtifact(db, other, scene)).toBe(false);
+    // And it's done: a second try finds nothing.
+    expect((await remove(player.userId, "abcdef03")).ok).toBe(false);
+  });
+
+  it("lets the city's owner take away what was filmed there, and no more", async () => {
+    const filmed = await film("a video the city owner removes");
+    const base = deps();
+    const r = await runCaptureJob(
+      { worldId: world, captureId: filmed.id, note: "", at: [38, 38] },
+      base,
+    );
+    const key = r?.placeKey as string;
+    expect(await listRemovablePlaceKeys(db, other, world)).not.toContain(key);
+    expect(await listRemovablePlaceKeys(db, owner, world)).toContain(key);
+    expect(await listRemovablePlaceKeys(db, player, world)).toContain(key);
+    expect(
+      await runRemoveJob(
+        { worldId: world, place: key, userId: owner.userId, nonce: "abcdef04" },
+        { db, store },
+      ),
+    ).toMatchObject({ ok: true });
+    expect(await getPinnedPlace(db, owner, world, key)).toBeNull();
+  });
+
+  it("leaves a video alone if someone else filmed the same bytes", async () => {
+    const one = await film("the very same video");
+    const two = await film("the very same video");
+    const base = deps();
+    const r = await runCaptureJob(
+      { worldId: world, captureId: one.id, note: "", at: [40, 40] },
+      base,
+    );
+    await runCaptureJob({ worldId: world, captureId: two.id, note: "", at: [41, 41] }, base);
+    expect(
+      await runRemoveJob(
+        { worldId: world, place: r?.placeKey as string, userId: player.userId, nonce: "abcdef05" },
+        { db, store },
+      ),
+    ).toMatchObject({ ok: true });
+    expect(await store.has(two.video.hash)).toBe(true);
+    expect(await systemGetCapture(db, two.id)).not.toBeNull();
   });
 
   it("is still a working place if the painting fails", async () => {

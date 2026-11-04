@@ -1,3 +1,7 @@
+/**
+ * Tests for decorating a place with a scripted model: what physics refuses, what people can do
+ * with what's added, and that nothing becomes unreachable.
+ */
 import { MemoryArtifactStore, MemoryRecipeIndex } from "@aye/artifacts";
 import type { LibraryCatalog, Scene, WorldSpec } from "@aye/schema";
 import { sampleFlat, sampleSettings, sampleSpec } from "@aye/schema/fixtures";

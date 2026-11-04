@@ -375,7 +375,6 @@ export function createLivePerson(
     root.updateMatrixWorld(true);
     across.set(1, 0, 0).applyQuaternion(root.getWorldQuaternion(turn));
     b.parent.getWorldQuaternion(parentQ);
-    // Axis into the parent's frame, then rotate the bone about it.
     const local = across.clone().applyQuaternion(parentQ.clone().invert());
     b.quaternion.premultiply(turn.setFromAxisAngle(local, angle));
   };

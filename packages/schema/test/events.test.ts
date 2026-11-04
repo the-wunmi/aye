@@ -1,3 +1,4 @@
+/** City events: what they change while they last, how they're checked, and the city's clock. */
 import { describe, expect, it } from "vitest";
 import { sampleCity } from "../src/fixtures.ts";
 import {

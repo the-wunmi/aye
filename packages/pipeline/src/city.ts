@@ -1,7 +1,7 @@
 /**
  * The city harness: a model writes a whole playable city (map, travel, needs, starts, theme,
- * HUD layout, its panels and their apps), code compiles it into a bounded `CitySpec`, a critique checks it
- * plays and reads well, and the model fixes what came back, until it works.
+ * HUD layout, its panels and their apps), code compiles it into a bounded `CitySpec`, a critique
+ * checks it plays and reads well, and the model fixes what came back, until it works.
  *
  *   brief ─ author-city (model) ─ draft ─ compile-city (code) ─ spec ─ critique
  *             ▲                                                         │
@@ -11,7 +11,7 @@
  * every key from names, clamps every number to `CITY_BOUNDS`, accepts only real colours and
  * single emoji, and reports in plain words anything it had to change. The critique holds the
  * interface to what makes a game playable (you can see your money and needs, get back to the
- * map, reach the phone, talk to people, afford to move) and legible (text contrast).
+ * map, open every panel, talk to people, afford to move) and legible (text contrast).
  *
  * Places are only described here. Each is built afterwards from its description (layout, then
  * its world, written knowing the city's needs) by whoever runs the harness.
@@ -55,20 +55,20 @@ import type { CityAuthor } from "./providers.ts";
 import { json, readJson, runStage, type StageDeps, type StageResult } from "./stage.ts";
 import { compilePersonLook, draftOfPersonLook, keyOf, type WorldCritique } from "./world.ts";
 
-/** Bump when the authoring loop's wiring or the brief's shape changes. */
 /** The least a money goal in someone's aim should come to, in hours of ordinary work. */
 const AIM_LEAST_HOURS = 30;
 
 /** What a critique takes as an ordinary ride, to judge a fare by. */
 const TYPICAL_RIDE_KM = 5;
 
+/** Bump when the authoring loop's wiring or the brief's shape changes. */
 export const CITY_HARNESS_VERSION = 2;
-/** Bump when draft → spec compilation changes. */
 /** How many hours of ordinary work a day the bills should come to, at most and at least. */
 const BILLS_MOST_HOURS_A_DAY = 4;
 const BILLS_LEAST_HOURS_A_DAY = 2;
 
-export const CITY_COMPILER_VERSION = 14;
+/** Bump when draft → spec compilation changes. */
+export const CITY_COMPILER_VERSION = 15;
 /** Bump when the critique's rules change. */
 export const CITY_CRITIQUE_VERSION = 14;
 

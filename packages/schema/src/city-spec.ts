@@ -137,7 +137,6 @@ export const Headline = z.object({ icon: Icon, text: Text(160) });
 
 // ── Economy, sun and words ─────────────────────────────────────────────────────────────
 
-/** What money is worth here: how much people want it depends on what work pays. */
 /** Something everyone here has to keep paying (rent, a stall fee, school fees). */
 export const Bill = z.object({
   name: z.string().min(1).max(80),
@@ -152,6 +151,7 @@ export const Bill = z.object({
 });
 export type Bill = z.infer<typeof Bill>;
 
+/** What money is worth here: how much people want it depends on what work pays. */
 export const Economy = z.object({
   /** What an hour of ordinary work pays here, minor units. */
   hourPay: z.int().min(1).max(CITY_BOUNDS.money),
@@ -299,7 +299,7 @@ export const Source = z.discriminatedUnion("from", [
     openNow: z.boolean(),
     sort: z.enum(["nearest", "name"]),
   }),
-  /** What the city is going through now and next (its director's events). */
+  /** No options. `events`: what the city is going through now and next (its director's). */
   z.object({ from: z.enum(["travel", "people", "players", "headlines", "events"]) }),
 ]);
 export type Source = z.infer<typeof Source>;
@@ -589,8 +589,8 @@ export function cityIssues(city: {
 
 /**
  * How big a place's building is drawn on the map, in metres (width, height, depth): bigger
- * than life and chunkier, like a city-builder board, so every building reads from above. The
- * same box its look is designed and judged in.
+ * than life and chunkier, so every building reads from above. The same box its look is designed
+ * and judged in.
  */
 export function mapBlock(place: Pick<CityPlace, "sizeM" | "heightM">): [number, number, number] {
   const w = Math.max(70, place.sizeM[0] * 2.4);

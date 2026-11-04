@@ -1,7 +1,8 @@
 /**
  * Threads (see `Thread` in @aye/schema): a player's own, read and advanced only by them (the
- * realm does it on their behalf, as them), added only by trusted jobs (their world's director).
- * Every rule is in the SQL predicate; another player's thread is simply not there.
+ * realm does it on their behalf, as them). Trusted jobs add them (their world's director), and a
+ * new character's aim is added once, as that player. Every rule is in the SQL predicate; another
+ * player's thread is simply not there.
  */
 import { Character, THREAD_BOUNDS, type Thread, Thread as ThreadSchema } from "@aye/schema";
 import { and, desc, eq, gt, sql } from "drizzle-orm";

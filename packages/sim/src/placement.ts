@@ -10,8 +10,8 @@
  *   steps (people lift things), around nothing else (furniture can be shuffled).
  *
  * Built once per object being moved, then each candidate pose costs only the cells under its
- * footprint, so a drag can check every pointer move. The worker runs the same check
- * authoritatively before accepting an edit. Pure and deterministic.
+ * footprint, so a drag can check every pointer move. `moveThing` runs the same check on the
+ * worker before a move is saved, and the pipeline's arrangers use it too. Pure and deterministic.
  */
 import type { ObjectId, Scene } from "@aye/schema";
 import { buildNavGrid, Flag, forEachCellInObb, type Mover, type NavGrid } from "./navgrid.ts";
@@ -38,6 +38,7 @@ export class PlacementField {
     isSolid: (obj: Scene["objects"][number]) => boolean,
     objectId: ObjectId,
     cellMm: number,
+    options: { walls?: boolean },
   ) {
     const obj = scene.objects.find((o) => o.id === objectId);
     if (!obj) throw new Error(`unknown object ${objectId}`);
@@ -45,7 +46,7 @@ export class PlacementField {
     this.#grid = buildNavGrid({ ...scene, objects: [] }, obj.levelId, { cellMm });
     this.#size = { w: obj.size.w, d: obj.size.d };
     this.#solid = isSolid(obj);
-    this.#againstWalls = !this.#solid;
+    this.#againstWalls = !this.#solid && !options.walls;
     const level = scene.levels.find((l) => l.id === obj.levelId);
     const xs = level?.footprint.map((p) => p[0]) ?? [0];
     const zs = level?.footprint.map((p) => p[1]) ?? [0];
@@ -88,8 +89,10 @@ export class PlacementField {
     isSolid: (obj: Scene["objects"][number]) => boolean,
     objectId: ObjectId,
     cellMm = 100,
+    /** `walls`: walls stop it even if it isn't solid, for something being moved by hand. */
+    options: { walls?: boolean } = {},
   ): PlacementField {
-    return new PlacementField(scene, isSolid, objectId, cellMm);
+    return new PlacementField(scene, isSolid, objectId, cellMm, options);
   }
 
   /** Why the object can't be at this pose, or null if it can. */
@@ -125,8 +128,9 @@ export class PlacementField {
 }
 
 /**
- * The authoritative check for an edit: every object whose pose or size changed must be placeable
- * from where it was. Returns the first problem, prefixed with the object's label.
+ * A check for a whole edit: every object whose pose or size changed must be placeable from where
+ * it was. Returns the first problem, prefixed with the object's label. Only tests call it now;
+ * moves by hand go through `moveThing`.
  */
 export function placementProblem(
   before: Scene,

@@ -83,6 +83,7 @@ const REASONS: Record<string, string> = {
   taken: "Someone else is playing them.",
   a_player: "That's another player.",
   not_yours: "That isn't yours.",
+  place_removed: "This place was removed, so you've gone home.",
   no_vehicle: "You don't have a vehicle with you.",
   unreachable: "Can't get there from here.",
   lacks_mark: "You don't have what that takes yet.",
@@ -102,7 +103,6 @@ let feedId = 0;
 
 /** Money leaving your pocket stays up long enough to read. */
 const BILL_NOTICE_MS = 9_000;
-/** Reaching a life goal stays up longer still. */
 
 export function useGame(worldId: string, currency: string, handle?: string) {
   const [state, setState] = useState<GameState>({

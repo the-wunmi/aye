@@ -304,6 +304,11 @@ export function FilmPlace({
           onChange={(e) => void choose(e.target.files?.[0] ?? null)}
         />
       </label>
+      <p className="muted small">
+        Anyone in this city can visit what you film. They'll see a game version built from it, not
+        your video, and it won't look exactly like the real place. Faces, number plates, documents
+        and screens are blurred first, and you can delete it at any time.
+      </p>
       <input
         className="film-note"
         value={note}

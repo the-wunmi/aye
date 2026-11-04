@@ -38,7 +38,7 @@ import {
 import { evaluateWorld } from "@aye/sim";
 import { z } from "zod";
 import { directStep, EVAL_SETTINGS, type StepRunner } from "./compile-job.ts";
-import { commitAndPin } from "./pin.ts";
+import { commitOnLatest } from "./pin.ts";
 
 export const AskJob = z.strictObject({
   worldId: WorldId,
@@ -128,6 +128,14 @@ export async function runAskJob(
       // A new way to get around the city counts too (the ride was there; now it goes places).
       if (result.kind.travel && !before.travel) added.push("Gets you around the city");
       if (added.length === 0) return { ok: false, reason: "that isn't something this can do" };
+      // Someone asking for something new can't take away or reprice what's there for everyone.
+      const kept = (x: { key: string; cost: number; income: number }) => {
+        const now = result.kind.actions.find((a) => a.key === x.key);
+        return now && now.cost === x.cost && now.income === x.income;
+      };
+      if (!before.actions.every(kept)) {
+        return { ok: false, reason: "that would change what's already here" };
+      }
       // Only what changed, and only if its look did: the player is standing there waiting, and
       // everything else in the place was judged when it was built.
       const lookOf = (k: { look: unknown }) => JSON.stringify(k.look);
@@ -143,36 +151,56 @@ export async function runAskJob(
               index,
               signal: deps.signal,
             });
-      const specRef = await deps.store.put(encodeJson(dressed.spec), "application/json");
-      await systemRecordArtifacts(deps.db, [specRef]);
-      const ownerId = (await systemGetHead(deps.db, pinned.placeId))?.ownerId as UserId;
-      if (!ownerId) return { ok: false, reason: "that didn't work" };
-      const sceneRef = {
-        hash: pinned.scene,
-        mediaType: "application/json",
-        bytes: encodeJson(scene).byteLength,
-      };
-      const baseRef =
-        pinned.base === pinned.scene
-          ? sceneRef
-          : { hash: pinned.base, mediaType: "application/json", bytes: 0 };
-      const rev: PlaceRevision = {
-        placeId: pinned.placeId as PlaceRevision["placeId"],
-        parent: pinned.revision,
-        base: baseRef,
-        edits: pinned.edits,
-        scene: sceneRef,
-        world: { spec: specRef, approved: false },
-        authorId: ownerId,
-        message: `Someone asked: ${job.request.slice(0, 120)}`,
-        createdAt: new Date().toISOString(),
-      };
-      // The place's owner, who may not be the city's: whoever filmed it keeps it.
-      const saved = await commitAndPin(
+      const made = dressed.spec.kinds.find((k) => k.key === result.kind.key) ?? result.kind;
+      const saved = await commitOnLatest(
         deps.db,
-        { worldId: job.worldId, key: job.place, ownerId },
-        rev,
-        scene,
+        { worldId: job.worldId, key: job.place },
+        async (latest) => {
+          if (!latest.spec) return null;
+          const ownerId = (await systemGetHead(deps.db, latest.placeId))?.ownerId as UserId;
+          if (!ownerId) return null;
+          // That took a while: only this one kind changes, on whatever the place is by now.
+          const [now, nowScene] = await Promise.all([
+            readJson(deps.store, {
+              hash: latest.spec,
+              mediaType: "application/json",
+              bytes: 0,
+            }).then((j) => WorldSpec.parse(j)),
+            readJson(deps.store, {
+              hash: latest.scene,
+              mediaType: "application/json",
+              bytes: 0,
+            }).then((j) => Scene.parse(j)),
+          ]);
+          const specRef = await deps.store.put(
+            encodeJson({
+              ...now,
+              kinds: now.kinds.map((k) => (k.key === made.key ? made : k)),
+            }),
+            "application/json",
+          );
+          await systemRecordArtifacts(deps.db, [specRef]);
+          const sceneRef = {
+            hash: latest.scene,
+            mediaType: "application/json",
+            bytes: encodeJson(nowScene).byteLength,
+          };
+          const revision: PlaceRevision = {
+            placeId: latest.placeId as PlaceRevision["placeId"],
+            parent: latest.revision,
+            base:
+              latest.base === latest.scene
+                ? sceneRef
+                : { hash: latest.base, mediaType: "application/json", bytes: 0 },
+            edits: latest.edits,
+            scene: sceneRef,
+            world: { spec: specRef, approved: false },
+            authorId: ownerId,
+            message: `Someone asked: ${job.request.slice(0, 120)}`,
+            createdAt: new Date().toISOString(),
+          };
+          return { revision, scene: nowScene };
+        },
       );
       if (!saved) return { ok: false, reason: "that didn't work" };
       return { ok: true, thing: result.kind.label, added };

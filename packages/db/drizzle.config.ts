@@ -1,3 +1,4 @@
+/** drizzle-kit's config: where the schema is and where generated migrations go. */
 import { existsSync } from "node:fs";
 import { defineConfig } from "drizzle-kit";
 

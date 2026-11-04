@@ -1,8 +1,8 @@
 /**
- * Filesystem-backed stores for local development and tests. Production uses S3-compatible
- * object storage behind the same ArtifactStore interface.
+ * Filesystem-backed stores behind the same ports as the in-memory ones. The API and worker keep
+ * artifacts on disk with these (`AYE_ARTIFACT_DIR`); no other backend exists yet.
  */
-import { mkdir, readFile, rename, stat, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import {
   type ArtifactHash,
@@ -36,6 +36,10 @@ export class FsArtifactStore implements ArtifactStore {
       await rename(tmp, path);
     }
     return { hash, mediaType, bytes: bytes.byteLength };
+  }
+
+  async delete(hash: ArtifactHash): Promise<void> {
+    await rm(this.#path(hash), { force: true });
   }
 
   async get(hash: ArtifactHash): Promise<Uint8Array | null> {

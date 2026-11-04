@@ -154,7 +154,9 @@ Frame sampling and redaction run on our infrastructure. Segmentation (SAM 3.1, h
 one call that sees unredacted keyframes, because finding faces and number plates is its job
 (ADR 0012); never send it more than the sampled keyframes. Everything after it (`Understander`,
 anything a player sees) only accepts `RedactedFrameSet` (enforced by the types),
-and private tracks (faces, plates, documents, screens) never become scene objects. Rebuilding a
+and what the segmenter finds (faces, plates, documents, screens) is pixelated on every frame first.
+A model's objects aren't tied to those detections, so people and identifying items are also
+refused by name when a scene is assembled (`isPrivateThing`). A TV stays a thing; its picture doesn't. Rebuilding a
 filmed thing in 3D (ADR 0023) sends only redacted frames, to whichever reconstructor is
 configured, and its output is checked as untrusted bytes before anyone can load it.
 

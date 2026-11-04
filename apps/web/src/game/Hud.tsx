@@ -268,7 +268,7 @@ export function compactHud(regions: ReadonlyMap<HudRegion, readonly Widget[]>): 
   return out;
 }
 
-/** The one thing to do next, for the bar: a job's current step, else what you're working towards. */
+/** What to do next, for the bar: a job's current step, else what you're working towards. */
 export function currentStep(
   threads: readonly Thread[],
   minute: number,
@@ -852,7 +852,6 @@ function WidgetView({ w, ctx }: { w: Widget; ctx: HudContext }) {
   }
 }
 
-/** Chat stays small: the last few lines over a single input, opened up on demand. */
 /** Hold to talk: what you said goes in the chat, and the answer you get is read out. */
 function Mic({ ctx, onHeard }: { ctx: HudContext; onHeard(): void }) {
   const [state, setState] = useState<"idle" | "listening" | "hearing">("idle");
@@ -933,6 +932,7 @@ function Mic({ ctx, onHeard }: { ctx: HudContext; onHeard(): void }) {
   );
 }
 
+/** Chat stays small: the last few lines over a single input, opened up on demand. */
 function Chat({ ctx, full = false }: { ctx: HudContext; full?: boolean }) {
   const [text, setText] = useState("");
   const [folded, setOpen] = useState(false);
@@ -1081,10 +1081,6 @@ function People({ ctx, full = false }: { ctx: HudContext; full?: boolean }) {
   );
 }
 
-/**
- * What you're in the middle of: each open thread, its steps (done, now, to come), when it's
- * due and what it pays. Every word is the director's, rendered as text.
- */
 /** Where a step sends you, and what to do there: tapping the step takes you. */
 function stepTarget(s: Thread["steps"][number]): GoTarget | null {
   if (s.check === "have_money" || s.check === "mark") return null;
@@ -1102,6 +1098,11 @@ function stakesText(stakes: Thread["onDone"], markLabel: (mark: string) => strin
     .join("");
 }
 
+/**
+ * What you're in the middle of: your aim, what you've got so far, and the first two open threads
+ * with their steps (done, now, to come), when each is due and what it pays. Every word is the
+ * city's or the director's, rendered as text.
+ */
 function Threads({
   priceOf,
   threads,
@@ -1179,7 +1180,7 @@ function Threads({
           {order === 0 && <div className="muted small">{t.about}</div>}
           <ol className="thread-steps">
             {t.steps.map((s, i) => {
-              // The first job in full; the rest only what's next, so all of them stay in sight.
+              // The first job in full; the second only what's next, so both stay in sight.
               if (order > 0 && i !== t.progress) return null;
               const target = i === t.progress ? stepTarget(s) : null;
               const price = s.check === "do" ? (priceOf?.(s.place, s.kind, s.action) ?? 0) : 0;

@@ -1,3 +1,4 @@
+/** Whose a thing is decides who may take it away, and it comes back with them. */
 import type { ObjectId, WorldSpec } from "@aye/schema";
 import { sampleFlat, sampleSettings, sampleSpec } from "@aye/schema/fixtures";
 import { describe, expect, it } from "vitest";

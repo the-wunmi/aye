@@ -20,7 +20,7 @@ const secrets: [string, RegExp][] = [
   ["private key", /-----BEGIN [A-Z ]*PRIVATE KEY-----/],
   ["AWS access key", /\bAKIA[0-9A-Z]{16}\b/],
   ["GitHub token", /\bgh[pousr]_[A-Za-z0-9]{36,}\b/],
-  ["Anthropic/OpenAI-style key", /\bsk-(ant-)?[A-Za-z0-9_-]{20,}\b/],
+  ["Model API key", /\bsk-(ant-)?[A-Za-z0-9_-]{20,}\b/],
   ["Slack token", /\bxox[abpors]-[A-Za-z0-9-]{10,}\b/],
   ["password in URL", /\b[a-z]+:\/\/[^\s:@/]+:(?!<password>)[^\s@/]{8,}@/],
 ];

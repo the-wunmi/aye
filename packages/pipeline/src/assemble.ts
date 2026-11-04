@@ -4,7 +4,7 @@
  * Pure and deterministic. This is where "the model proposes, code disposes" happens:
  * - metres → integer millimetres, clamped to schema limits, normalised to a min-corner origin
  * - ids derived from provenance (capture + track / model key), so re-runs keep ids stable
- * - anything private (people, plates) is dropped even if the model described it
+ * - an object carrying a private track's number is dropped, whatever the model called it
  * - every collection sorted by id, then validated by the Scene schema with referential checks
  */
 
@@ -59,6 +59,15 @@ export interface AssembleInput {
   understanding: SceneUnderstanding;
   tracks: TrackSet;
 }
+
+/**
+ * Is this the name of someone, or of something that identifies them? People in a place are the
+ * world's to write, not furniture from a video. A child's bed is still a bed, so what belongs to
+ * someone isn't caught: only the person. A list of privacy's own words, not what a world contains.
+ */
+const PRIVATE_THING =
+  /\b(person|people|man|men|woman|women|boy|girl|child|children|baby|toddler|kid|kids|pedestrian|passenger|license plate|licence plate|number plate|passport|id card|bank card|credit card|bank statement)\b(?!['\u2019]s)/i;
+export const isPrivateThing = (label: string) => PRIVATE_THING.test(label);
 
 export function assembleScene({ captureId, understanding: u, tracks }: AssembleInput): Scene {
   // Normalise to a min-corner origin so scenes from different captures line up predictably.
@@ -146,8 +155,11 @@ export function assembleScene({ captureId, understanding: u, tracks }: AssembleI
   const trackById = new Map(tracks.tracks.map((t) => [t.trackId, t]));
   const objects = u.objects.flatMap((o) => {
     const track = trackById.get(o.trackId);
-    // Privacy: never turn a person, plate or document into a scene object, whatever the model said.
+    // Privacy: an object tied to a private track never becomes a scene object, whatever its label.
     if (track?.private) return [];
+    // A model's objects aren't tied to what the segmenter found (it numbers them itself, and a
+    // spot in a room can't be matched to pixels in a frame), so what it calls them is checked too.
+    if (isPrivateThing(o.label)) return [];
     const [x, z] = pt(o.at);
     return [
       {

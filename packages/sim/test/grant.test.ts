@@ -1,3 +1,4 @@
+/** Money the city pays someone is a command, so it stays deterministic and can't take any away. */
 import { sampleFlat, sampleSettings, sampleSpec } from "@aye/schema/fixtures";
 import { describe, expect, it } from "vitest";
 import { Sim } from "../src/index.ts";

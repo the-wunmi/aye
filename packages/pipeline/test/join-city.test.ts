@@ -1,3 +1,7 @@
+/**
+ * Tests for a filmed place joining a city with a scripted model: which kinds it can be, and what's
+ * cleaned and bounded.
+ */
 import { MemoryArtifactStore, MemoryRecipeIndex } from "@aye/artifacts";
 import { type CitySpec, Item } from "@aye/schema";
 import { sampleCity } from "@aye/schema/fixtures";

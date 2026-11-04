@@ -34,7 +34,7 @@ export function canReadPlace(
   return owns(actor, place.ownerId) || place.visibility !== "private" || inWorldWithRole !== null;
 }
 
-/** Listing/search shows public places only (unlisted is link-only). */
+/** Listing/search shows your own places and public ones (unlisted is link-only). */
 export function canListPlace(actor: Actor, place: PlaceFacts): boolean {
   return owns(actor, place.ownerId) || place.visibility === "public";
 }

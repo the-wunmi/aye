@@ -620,7 +620,7 @@ export function compileWorld(args: {
 
 // ── The loop ──────────────────────────────────────────────────────────────────────────
 
-/** Errors dominate; then fewer warnings is better. A missing spec is worst. */
+/** Errors dominate, then things to fix, then warnings. A missing spec is worst. */
 const badness = (spec: WorldSpec | null, findings: readonly WorldCritique[]) =>
   spec === null
     ? Number.POSITIVE_INFINITY

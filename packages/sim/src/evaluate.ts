@@ -38,9 +38,9 @@ const MOST_GOES_PER_HOUR = 2;
 /** The best work anywhere pays about this many times an ordinary hour. */
 const MOST_PAY_TIMES_ORDINARY = 3;
 
-/** The least time an action that raises a mark for free should take. */
 /** What an hour of pay should buy, permille of a need, at the least. */
 const NEED_PER_HOUR_OF_PAY = 250;
+/** The least time an action that raises a mark for almost nothing should take. */
 const MARK_TAKES_MIN = 30;
 /** What's done to fill a need should beat this many times what it loses by itself. */
 const FILLS_TIMES_DECAY = 2;
@@ -83,7 +83,6 @@ function standIn(spec: WorldSpec): WorldSpec["people"][number] {
   };
 }
 
-/** Static reading of the spec: states, resources and needs that can never come about. */
 /** Is there something here to lie on, free, that really puts right what a day takes out of you? */
 function somewhereToSleep(spec: WorldSpec): boolean {
   const used = new Set(spec.things.map((t) => t.kind));
@@ -100,6 +99,7 @@ function somewhereToSleep(spec: WorldSpec): boolean {
   );
 }
 
+/** Static reading of the spec: states, resources and needs that can never come about. */
 export function staticFindings(spec: WorldSpec): WorldFinding[] {
   const out: WorldFinding[] = [];
   const supplied = new Set<string>();

@@ -1,6 +1,6 @@
 /**
- * Cross-origin isolation (COOP/COEP) is on in dev and preview so SharedArrayBuffer is
- * available when the sim↔renderer channel moves to shared memory.
+ * Cross-origin isolation (COOP/COEP) is on in dev and preview. Nothing uses shared memory today:
+ * the realm runs places on the server, and city life talks to its worker by message.
  *
  * In development the API (and the realm's WebSocket) is proxied under /api, so the game, its
  * session cookie and its socket all share one origin, as they do in production.
@@ -19,11 +19,13 @@ const isolation = {
 
 const csp = [
   "default-src 'self'",
-  "script-src 'self'",
+  // Compiling WebAssembly only (three's mesh decoder); it doesn't allow eval.
+  "script-src 'self' 'wasm-unsafe-eval'",
   "worker-src 'self' blob:",
   "style-src 'self' 'unsafe-inline'",
   "img-src 'self' data: blob:",
-  "connect-src 'self'",
+  // blob: is how the model loader reads the textures packed inside a model file.
+  "connect-src 'self' blob:",
   "object-src 'none'",
   "base-uri 'none'",
   "frame-ancestors 'none'",

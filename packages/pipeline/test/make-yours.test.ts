@@ -1,3 +1,7 @@
+/**
+ * Tests for making a place your own with a scripted model: what physics allows, what it costs, and
+ * what a bought thing may do.
+ */
 import { hashJson, MemoryArtifactStore, MemoryRecipeIndex } from "@aye/artifacts";
 import { LIBRARY_CATALOG, type LibraryCatalog } from "@aye/schema";
 import { sampleFlat, sampleSpec } from "@aye/schema/fixtures";

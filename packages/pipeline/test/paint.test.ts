@@ -1,3 +1,7 @@
+/**
+ * Tests for painting a filmed place with a scripted painter: what gets a picture, and that only
+ * real images are kept.
+ */
 import { MemoryArtifactStore, MemoryRecipeIndex } from "@aye/artifacts";
 import { WorldSpec } from "@aye/schema";
 import { sampleFlat, sampleSpec } from "@aye/schema/fixtures";
@@ -67,7 +71,7 @@ describe("painting a filmed place", () => {
     // Rooms that look alike share one picture; rooms that don't, don't.
     const pictures = new Set(r.spec.ground.map((g) => g.photo));
     expect(pictures.size).toBe(Math.min(2, sampleFlat.spaces.length));
-    // Every big enough thing, biggest first, up to the limit; only what it said isn't a box stays out.
+    // Every big enough thing, biggest first, up to the limit; only what's not a box stays out.
     const fronts = r.spec.things.filter((t) => t.front);
     expect(fronts.length).toBeGreaterThan(2);
     expect(fronts.length).toBeLessThanOrEqual(MAX_PAINTED_THINGS);

@@ -1,9 +1,9 @@
-import { placesOf } from "@aye/schema";
 /**
  * Cities: the ones you made or joined, open ones anyone can join, and a box to describe a new
  * one in your own words. A new city is written and built by models in the background; this
- * shows its progress (the city first, then each place) until it opens.
+ * shows its progress (the city first, then each place) until every place stands.
  */
+import { placesOf } from "@aye/schema";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ApiError, api } from "../api.ts";
 import type { CityBundle, WorldSummary } from "../game/types.ts";

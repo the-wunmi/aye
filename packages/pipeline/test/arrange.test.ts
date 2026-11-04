@@ -1,3 +1,7 @@
+/**
+ * Tests for arranging seats with a scripted model (`arrangePlace`) and for fitting library meshes
+ * into a thing's box.
+ */
 import { MemoryArtifactStore, MemoryRecipeIndex } from "@aye/artifacts";
 import type { LibraryCatalog, Scene, WorldSpec } from "@aye/schema";
 import { sampleFlat, sampleSettings, sampleSpec } from "@aye/schema/fixtures";

@@ -1,7 +1,8 @@
 /**
  * Turning a model's values into bounded ones: numbers clamped, colours and icons
- * checked, shapes bounded, and every change said in words the model can act on. Shared by
- * every compiler that reads a draft (cities, their kinds, worlds' looks).
+ * checked, shapes bounded, and every change said in words the model can act on. Shared by what
+ * compiles a city's drafts (the city, its kinds, dressing, the director, a place joining it);
+ * worlds keep their own in world.ts.
  */
 import { Icon, type Solid } from "@aye/schema";
 import { cleanText } from "./assemble.ts";

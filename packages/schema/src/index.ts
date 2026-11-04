@@ -1,3 +1,4 @@
+/** The domain model every package shares. Test data is apart, in `@aye/schema/fixtures`. */
 export * from "./artifact.ts";
 export * from "./capture.ts";
 export * from "./character.ts";

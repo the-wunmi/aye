@@ -42,7 +42,7 @@ const model = (name: string): ModelRef => ({ provider: "fake", model: name, vers
 
 export interface FakeScript {
   understanding: SceneUnderstanding;
-  /** Extra tracks beyond one per object, e.g. a passer-by. */
+  /** The tracks the segmenter reports, e.g. a passer-by. */
   extraTracks?: Omit<Track, "masks">[];
 }
 

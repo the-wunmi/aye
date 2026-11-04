@@ -3,7 +3,8 @@
  * reads how the city is doing (the time, what's open and running, how busy the roads are,
  * where players are, what is already going on, and its own notes from last time) and decides
  * what the city goes through next: events with effects (a place shut, a way to get around
- * halted, slowed or dearer) and headlines, plus a note to itself for next time.
+ * halted, slowed or dearer), headlines, threads and new aims for players, and a note to itself
+ * for next time.
  *
  * It acts on its own, inside the same discipline as everything a model writes: a memoised
  * stage with a recipe, a strict bounded draft, and code that resolves every name, clamps every
@@ -450,7 +451,7 @@ export function compileDirection(
       effects,
     });
   }
-  // The newest first when there are too many: the city is about what's happening now.
+  // The newest are kept when there are too many: the city is about what's happening now.
   const events = [...kept, ...fresh]
     .sort((a, b) => a.from - b.from || a.key.localeCompare(b.key))
     .slice(-EVENT_BOUNDS.events);
@@ -551,20 +552,20 @@ function compileAims(
   return out;
 }
 
-/**
- * The director's threads made checkable: each step resolved to keys the realm can test (a
- * place, one of its actions, one of its people), the reward bounded by what work pays here,
- * and a player given at most one new thread a turn, none if they already carry enough.
- */
-/** A thread leaves at least this long (city minutes) after its places open to do it there. */
 /** The most a new life goal can ask for or pay, in hours of ordinary work. */
 const MOST_AIM_HOURS = 200;
+/** A thread leaves at least this long (city minutes) after its places open to do it there. */
 const THREAD_ROOM_MIN = 180;
 /** On top of the work itself: getting there, and a little slack. */
 const THREAD_WORK_ROOM_MIN = 120;
 /** A place must be open at least this long (city minutes) for a thread to send anyone there. */
 const THREAD_MIN_OPEN_MIN = 90;
 
+/**
+ * The director's threads made checkable: each step resolved to keys the realm can test (a
+ * place, one of its actions, one of its people), the reward bounded by what work pays here,
+ * and a player given at most one new thread a turn, none if they already carry enough.
+ */
 function compileThreads(
   drafts: DirectorDraft["threads"],
   city: CitySpec,

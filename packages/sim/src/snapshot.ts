@@ -1,7 +1,7 @@
 /**
  * A plain snapshot of everything a viewer needs to draw a place and its people at one tick.
- * The realm server streams these to players; the same shape drives the renderer whether the
- * sim runs on a server or anywhere else. Integers only, so it serialises exactly.
+ * The realm server streams these to players, and the renderer draws from them. Its numbers are
+ * all integers, so it serialises exactly.
  */
 import type { Snapshot } from "@aye/schema";
 import { MAX_PEOPLE, Mode, NEED_SCALE, POSES, type Sim } from "./sim.ts";

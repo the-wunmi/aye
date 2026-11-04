@@ -1,3 +1,4 @@
+/** Someone arriving never lands on anyone already there, and people using a thing stand apart. */
 import type { ObjectId } from "@aye/schema";
 import { sampleFlat, sampleSettings, sampleSpec } from "@aye/schema/fixtures";
 import { describe, expect, it } from "vitest";

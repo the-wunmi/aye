@@ -8,7 +8,8 @@
  * - Sessions are HttpOnly, SameSite=Lax cookies (Secure in production) holding a random token
  *   whose hash is the only thing stored. State-changing requests must be JSON and, when a
  *   browser says where they come from, come from our own origin: no cross-site forgery.
- * - Every input is Zod-validated; unknown fields are rejected.
+ * - Input is Zod-validated and unknown fields are rejected; log-in alone checks by hand, and
+ *   any bad attempt gets the same 401.
  * - Not-found and not-allowed are both 404, so ids reveal nothing.
  * - Errors never leak internals; stack traces stay in server logs.
  * - Artifacts are served only after canReadArtifact, with a sandboxing CSP and nosniff,
@@ -38,9 +39,11 @@ import {
   Handle,
   joinWorld,
   listMyThreads,
+  listOwnedPlaceKeys,
   listOwnPlaces,
   listPinnedSpecs,
   listPublicPlacesNear,
+  listRemovablePlaceKeys,
   listWorlds,
   Password,
   registerUser,
@@ -60,6 +63,7 @@ import {
   type CitySpec,
   GeoAnchor,
   NewCharacter,
+  ObjectId,
   ownersOnly,
   type PersonDef,
   placesOf,
@@ -92,6 +96,8 @@ export interface AppDeps {
   db: Db;
   /** Someone signed out: end their live connections, which were only checked on opening. */
   onSignOut?: (userId: string) => void;
+  /** A place just changed: rooms playing it should take it now. */
+  onPlaceChanged?: (worldId: string, placeKey: string) => void;
   store: ArtifactStore;
   content: Content;
   /** Queue the durable job that writes and builds a city (the worker runs it). */
@@ -110,7 +116,7 @@ export interface AppDeps {
       | null
     >;
   };
-  /** Speech to text for talking to people; absent: the game has no microphone button. */
+  /** Speech to text for talking to people; absent: the voice route answers `no_voice`. */
   transcribe?: Transcribe;
   /** Queue the durable job that turns a filmed place into part of a city. */
   enqueueCapture: (job: {
@@ -123,7 +129,14 @@ export interface AppDeps {
   homes?: {
     enqueue(
       userId: string,
-      job: { worldId: string; userId: string; place: string; request: string; nonce: string },
+      job: {
+        worldId: string;
+        userId: string;
+        place: string;
+        request?: string;
+        moves?: { object: string; xMm: number; zMm: number; yawDeg: number }[];
+        nonce: string;
+      },
     ): Promise<string>;
     status(id: string): Promise<
       | { status: "working" }
@@ -143,6 +156,33 @@ export interface AppDeps {
       | null
     >;
   };
+  /** Taking away a filmed place: queue it, and see how it went. */
+  removals?: {
+    enqueue(
+      userId: string,
+      job: { worldId: string; place: string; userId: string; nonce: string },
+    ): Promise<string>;
+    status(id: string): Promise<
+      | { status: "working" }
+      | {
+          status: "done";
+          result: { ok: true; worldId: string; place: string } | { ok: false; reason: string };
+        }
+      | null
+    >;
+  };
+  /** Moving a thing in a place of yours: queue it, and see how it went. */
+  moves?: {
+    enqueue(userId: string, job: MoveRequest): Promise<string>;
+    status(id: string): Promise<
+      | { status: "working" }
+      | {
+          status: "done";
+          result: { ok: true; worldId: string; place: string } | { ok: false; reason: string };
+        }
+      | null
+    >;
+  };
   /** Asking a thing for something new: queue it, and see how it went. */
   asks: {
     enqueue(userId: string, job: AskRequest): Promise<string>;
@@ -155,6 +195,15 @@ export interface AppDeps {
       | null
     >;
   };
+}
+
+/** What the worker's move job takes. */
+export interface MoveRequest {
+  worldId: string;
+  place: string;
+  moves: { object: string; xMm: number; zMm: number; yawDeg: number }[];
+  userId: string;
+  nonce: string;
 }
 
 /** What the worker's ask job takes. */
@@ -195,6 +244,20 @@ const IdParam = z
   .string()
   .max(64)
   .regex(/^[a-z]{3}_[0-9a-z]{3,40}$/);
+
+const MoveBody = z.strictObject({
+  moves: z
+    .array(
+      z.strictObject({
+        object: ObjectId,
+        xMm: z.int().min(-10_000_000).max(10_000_000),
+        zMm: z.int().min(-10_000_000).max(10_000_000),
+        yawDeg: z.int().min(0).max(359),
+      }),
+    )
+    .min(1)
+    .max(64),
+});
 
 const HomeBody = z.strictObject({
   place: SpecKey,
@@ -239,7 +302,8 @@ const FILMED_PLACE_CLEAR_M = 30;
 
 /**
  * Where a filmed place stands on the map: where the player put it, or a short way from where
- * they are now; either way kept on the map, and never on top of something already there.
+ * they are now; either way kept on the map, and clear of what's already there unless no spot
+ * within the search is.
  */
 function whereItGoes(
   city: CitySpec,
@@ -400,11 +464,14 @@ export function createApp({
   env,
   db,
   onSignOut,
+  onPlaceChanged,
   store,
   content,
   enqueueCity,
   enqueueCapture,
   asks,
+  moves,
+  removals,
   homes,
   questions,
   transcribe,
@@ -602,10 +669,6 @@ export function createApp({
     return c.json({ visibility: body.visibility });
   });
 
-  /**
-   * The city spec, plus what each built place offers (its actions, from its world spec), for
-   * apps that list where to work, eat or spend. Members only.
-   */
   /** Your threads in a world: what you're in the middle of (yours only). */
   app.get("/worlds/:id/threads", async (c) => {
     const id = parse(IdParam, c.req.param("id"));
@@ -633,6 +696,10 @@ export function createApp({
     });
   });
 
+  /**
+   * The city spec, plus what each built place offers (its actions, from its world spec), for
+   * apps that list where to work, eat or spend. Members only.
+   */
   app.get("/worlds/:id/city", async (c) => {
     const actor = user(c);
     const id = parse(IdParam, c.req.param("id"));
@@ -645,7 +712,14 @@ export function createApp({
       if (!pinned?.spec) continue;
       catalog[p.key] = catalogOf(await content.spec(pinned.spec));
     }
-    return c.json({ city, catalog, createdAt: world.createdAt, settings: world.settings });
+    return c.json({
+      city,
+      catalog,
+      createdAt: world.createdAt,
+      settings: world.settings,
+      yours: await listOwnedPlaceKeys(db, actor, id),
+      removable: await listRemovablePlaceKeys(db, actor, id),
+    });
   });
 
   app.get("/worlds/:id/character", async (c) => {
@@ -690,6 +764,8 @@ export function createApp({
     const body = parse(AskBody, await json(c));
     const pinned = await getPinnedPlace(db, actor, id, key);
     if (!pinned?.spec) throw notFound();
+    // Changing a place for everyone takes someone living in this city, not just an account.
+    if (!(await getMyCharacter(db, actor, id))) throw notFound();
     const job = await asks.enqueue(actor.userId, {
       worldId: id,
       place: key,
@@ -698,6 +774,109 @@ export function createApp({
       nonce: randomId("run").slice(4, 24),
     });
     return c.json({ job }, 202);
+  });
+
+  // ── Moving a thing, by hand ─────────────────────────────────────────────────────────
+
+  const moveLimit = rateLimit({
+    windowMs: 10 * 60_000,
+    max: 120,
+    key: (c) => `move:${(c.get("actor") as { userId?: string }).userId ?? clientIp(c)}`,
+  });
+  app.post("/worlds/:id/places/:key/move", moveLimit, async (c) => {
+    const actor = user(c);
+    const id = parse(IdParam, c.req.param("id")) as WorldId;
+    const key = parse(SpecKey, c.req.param("key"));
+    const { moves: asked } = parse(MoveBody, await json(c));
+    const nonce = randomId("run").slice(4, 24);
+    const world = await getWorld(db, actor, id);
+    const character = world && (await getMyCharacter(db, actor, id));
+    if (!world?.city || !character) throw notFound();
+    // Your own home is your own copy of it.
+    const city = await content.city(world.city);
+    if (city.starts.find((s) => s.key === character.start)?.home === key) {
+      if (!homes) throw notFound();
+      const job = await homes.enqueue(actor.userId, {
+        worldId: id,
+        userId: actor.userId,
+        place: key,
+        moves: asked,
+        nonce,
+      });
+      return c.json({ job, home: true }, 202);
+    }
+    // Any other place only if it's yours; to anyone else, there's nothing to move here.
+    if (!moves || !(await listOwnedPlaceKeys(db, actor, id)).includes(key)) throw notFound();
+    const job = await moves.enqueue(actor.userId, {
+      worldId: id,
+      place: key,
+      moves: asked,
+      userId: actor.userId,
+      nonce,
+    });
+    return c.json({ job, home: false }, 202);
+  });
+
+  app.get("/moves/:job", async (c) => {
+    const actor = user(c);
+    const job = c.req.param("job");
+    if (
+      !/^move-usr_[0-9a-z]{3,40}-[0-9a-z]{6,32}$/.test(job) ||
+      !job.startsWith(`move-${actor.userId}-`) ||
+      !moves
+    ) {
+      throw notFound();
+    }
+    const status = await moves.status(job);
+    if (!status) throw notFound();
+    if (status.status === "done" && status.result.ok) {
+      onPlaceChanged?.(status.result.worldId, status.result.place);
+      return c.json({ status: "done", result: { ok: true } });
+    }
+    return c.json(status);
+  });
+
+  // ── Taking a filmed place away ──────────────────────────────────────────────────────
+
+  const removeLimit = rateLimit({
+    windowMs: 10 * 60_000,
+    max: 20,
+    key: (c) => `remove:${(c.get("actor") as { userId?: string }).userId ?? clientIp(c)}`,
+  });
+  app.delete("/worlds/:id/places/:key", removeLimit, async (c) => {
+    const actor = user(c);
+    const id = parse(IdParam, c.req.param("id")) as WorldId;
+    const key = parse(SpecKey, c.req.param("key"));
+    // What you filmed, or anything filmed in a city you own; to anyone else, there's nothing here.
+    if (!removals || !(await listRemovablePlaceKeys(db, actor, id)).includes(key)) {
+      throw notFound();
+    }
+    const job = await removals.enqueue(actor.userId, {
+      worldId: id,
+      place: key,
+      userId: actor.userId,
+      nonce: randomId("run").slice(4, 24),
+    });
+    return c.json({ job }, 202);
+  });
+
+  app.get("/removals/:job", async (c) => {
+    const actor = user(c);
+    const job = c.req.param("job");
+    if (
+      !/^remove-usr_[0-9a-z]{3,40}-[0-9a-z]{6,32}$/.test(job) ||
+      !job.startsWith(`remove-${actor.userId}-`) ||
+      !removals
+    ) {
+      throw notFound();
+    }
+    const status = await removals.status(job);
+    if (!status) throw notFound();
+    if (status.status === "done" && status.result.ok) {
+      onPlaceChanged?.(status.result.worldId, status.result.place);
+      return c.json({ status: "done", result: { ok: true } });
+    }
+    return c.json(status);
   });
 
   // ── Making your own home yours ──────────────────────────────────────────────────────
@@ -759,7 +938,7 @@ export function createApp({
     const id = parse(IdParam, c.req.param("id")) as WorldId;
     const key = parse(SpecKey, c.req.param("key"));
     const { question } = parse(QuestionBody, await json(c));
-    // Anyone who can see this place may ask about it; to anyone else it isn't there.
+    // Anyone who plays in this world may ask about it; to anyone else it isn't there.
     const pinned = await getPinnedPlace(db, actor, id, key);
     if (!pinned?.spec) throw notFound();
     const job = await questions.enqueue(actor.userId, {

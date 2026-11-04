@@ -1,3 +1,4 @@
+/** The HUD's pure rules: arranging a model's layout, folding it for a phone, the next step. */
 import type { Layout, Thread, Widget } from "@aye/schema";
 import { describe, expect, it } from "vitest";
 import { arrange, compactHud, currentStep } from "../src/game/Hud.tsx";

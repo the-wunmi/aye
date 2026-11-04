@@ -6,8 +6,8 @@
  *   - the catalog `packages/schema/src/library-catalog.ts` (committed), which is what models
  *     choose from and what specs are checked against.
  *
- * Pinned: every file's SHA-256 is in the catalog. A re-fetch that gets different bytes stops
- * with an error (pass `--update` to accept new versions deliberately). Downloads are HTTPS
+ * Pinned: every file's SHA-256 is in the catalog. A re-fetch that gets different bytes fails that
+ * file with an error (pass `--update` to accept new versions deliberately). Downloads are HTTPS
  * only, from the sources' own hosts, and every output path is built from our ids, never from
  * anything a source returns.
  *
@@ -134,7 +134,7 @@ function save(file: string, bytes: Uint8Array): string {
 
 // ── Shrinking for phones ──────────────────────────────────────────────────────────────────
 
-/** Largest texture edge shipped, in pixels: plenty at game distance, a quarter of 1k. */
+/** Largest texture edge shipped, in pixels: plenty at game distance, a quarter of 1k's pixels. */
 const MAX_TEXTURE_PX = 512;
 
 /** Decode a PNG or JPEG to RGBA, or null if it's neither. */

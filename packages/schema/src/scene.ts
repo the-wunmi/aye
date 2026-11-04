@@ -114,7 +114,7 @@ export const LevelChange = z.object({
 });
 export type LevelChange = z.infer<typeof LevelChange>;
 
-/** Where the place connects to other places. The destination lives on the World, not here. */
+/** A way in and out of the place. Where it leads isn't here: travel comes from the city spec. */
 export const Portal = z.object({
   id: PortalId,
   levelId: LevelId,

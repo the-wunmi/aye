@@ -246,7 +246,7 @@ describe.skipIf(!url)("repositories enforce object-level access", () => {
     expect(await edit({ spec: forged, approved: false })).toBe(false);
     expect(await edit(null)).toBe(false);
 
-    // Only the owner, only the rulebook proposed at the head they reviewed.
+    // Only the owner, only the world spec proposed at the head they reviewed.
     expect(await approveWorld(db, bob, "plc_rules", head, rulebook.hash)).toBeNull();
     expect(await approveWorld(db, anon, "plc_rules", head, rulebook.hash)).toBeNull();
     expect(await approveWorld(db, alice, "plc_rules", head, forged.hash)).toBeNull();

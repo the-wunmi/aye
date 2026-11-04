@@ -1,3 +1,7 @@
+/**
+ * Tests for people answering players: who may speak, what reaches the chat, and what counts as an
+ * offer.
+ */
 import { MemoryArtifactStore, MemoryRecipeIndex } from "@aye/artifacts";
 import { describe, expect, it } from "vitest";
 import {

@@ -104,7 +104,7 @@ class Heap {
   }
 }
 
-/** Reusable search state for one grid. Not thread-safe; create one per worker. */
+/** Reusable search state for one grid. Each sim or job makes its own; buffers aren't shared. */
 export class PathFinder {
   readonly grid: NavGrid;
   readonly #g: Float64Array;
@@ -137,7 +137,7 @@ export class PathFinder {
   }
 
   /**
-   * Shortest path from `start` to any cell in `goals` (sorted cell list). `aim` steers the
+   * Shortest path from `start` to any cell in `goals`. `aim` steers the
    * heuristic toward the goal set; it is inadmissible for scattered goals, which trades
    * optimality for speed — fine for agents, never used for measurements.
    * Returns cells from start (exclusive) to goal (inclusive), or null if unreachable.

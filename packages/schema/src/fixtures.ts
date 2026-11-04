@@ -245,7 +245,7 @@ export const sampleSpec: WorldSpec = WorldSpec.parse({
   name: "Sample flat",
   summary: "A two-room ground-floor flat in Lagos with a yard.",
   currency: "NGN",
-  // At this pay, a naira earned counts as before (pay / 2,000 need points).
+  // At this pay, money is worth pay / 2,000 need points to someone choosing what to do.
   hourPay: 100_000,
   livedIn: true,
   needs: [

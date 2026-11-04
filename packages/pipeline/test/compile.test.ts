@@ -1,3 +1,7 @@
+/**
+ * Tests for `compilePlace` with fake providers: memoised re-runs, and how hostile or disconnected
+ * layouts are contained.
+ */
 import { MemoryArtifactStore, MemoryRecipeIndex } from "@aye/artifacts";
 import { type CaptureId, Scene } from "@aye/schema";
 import { sampleFlat } from "@aye/schema/fixtures";
@@ -9,7 +13,15 @@ import {
   fakeDescriber,
   understandingFromScene,
 } from "../src/fake.ts";
-import { cleanText, compilePlace, PipelineError, PRIVATE_TRACK_BASE } from "../src/index.ts";
+import {
+  cleanText,
+  compilePlace,
+  isPrivateThing,
+  metaSegmenter,
+  PipelineError,
+  PRIVATE_CONCEPTS,
+  PRIVATE_TRACK_BASE,
+} from "../src/index.ts";
 import { cutOffSpaceNames, walkFindings } from "../src/layout-check.ts";
 
 const captureId = "cap_test01" as CaptureId;
@@ -63,6 +75,38 @@ describe("compilePlace", () => {
     const b = await compilePlace(words, deps);
     expect(b.sceneRef.hash).toBe(a.sceneRef.hash);
     expect(calls.describe).toBe(1);
+  });
+
+  it("never lets a person or what identifies them become a thing, by name", () => {
+    for (const label of [
+      "a man reading",
+      "two people on the sofa",
+      "Woman",
+      "sleeping baby",
+      "white car number plate",
+      "passport on the table",
+      "person",
+    ]) {
+      expect(isPrivateThing(label), label).toBe(true);
+    }
+    for (const label of [
+      "child's bed",
+      "woman's handbag",
+      "mannequin",
+      "grey sofa",
+      "flat-screen TV",
+      "bookshelf full of books",
+      "manhole cover",
+    ]) {
+      expect(isPrivateThing(label), label).toBe(false);
+    }
+  });
+
+  it("asks the segmenter for everything the privacy rule names", () => {
+    expect([...PRIVATE_CONCEPTS]).toEqual(["face", "license plate", "document", "screen"]);
+    expect(metaSegmenter({ apiKey: "k", textModel: "m" } as never).model.version).toBe(
+      "sam-3.1/face+license plate+document+screen",
+    );
   });
 
   it("never turns a private detection into a thing, whatever the model says", async () => {

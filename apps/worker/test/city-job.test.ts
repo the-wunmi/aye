@@ -41,6 +41,7 @@ import postgres from "postgres";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { runAskJob } from "../src/ask-job.ts";
 import { runCityJob } from "../src/city-job.ts";
+import { runMoveJob } from "../src/move-job.ts";
 
 const url = process.env["DATABASE_URL"];
 
@@ -254,6 +255,139 @@ describe.skipIf(!url)("city build job", () => {
     } finally {
       await db.execute(sql`update places set owner_id = ${alice.userId} where id = ${placeId}`);
     }
+  });
+
+  it("moving a thing saves it as an edit, and refuses what can't be", async () => {
+    const before = await getPinnedPlace(db, alice, world, "mama_s_spot");
+    const read = async (hash: ArtifactHash) =>
+      JSON.parse(new TextDecoder().decode((await store.get(hash)) ?? new Uint8Array())) as {
+        objects: { id: string; transform: { position: number[]; yawDeg: number } }[];
+        spaces: { polygon: number[][] }[];
+      };
+    const scene = await read(before?.scene as ArtifactHash);
+    const object = scene.objects.find((o) => (o.transform.position[1] ?? 0) === 0);
+    const [x = 0, , z = 0] = object?.transform.position ?? [];
+    const yawDeg = Math.round(object?.transform.yawDeg ?? 0);
+    const job = (
+      to: { xMm: number; zMm: number; yawDeg: number },
+      userId: string = alice.userId,
+    ) => ({
+      worldId: world,
+      place: "mama_s_spot",
+      moves: [{ object: object?.id, ...to }],
+      userId,
+      nonce: "abcdef99",
+    });
+
+    // Not theirs, and through the wall: nothing happens.
+    expect(await runMoveJob(job({ xMm: x, zMm: z, yawDeg }, bob.userId), { db, store })).toEqual({
+      ok: false,
+      reason: "That isn't yours to move.",
+    });
+    expect(
+      await runMoveJob(job({ xMm: 9_000_000, zMm: 9_000_000, yawDeg }), { db, store }),
+    ).toMatchObject({ ok: false });
+    expect((await getPinnedPlace(db, alice, world, "mama_s_spot"))?.revision).toBe(
+      before?.revision,
+    );
+
+    // Somewhere it fits: found by trying, the way a hand would.
+    let moved: Awaited<ReturnType<typeof runMoveJob>> = { ok: false, reason: "" };
+    let to = { xMm: x, zMm: z, yawDeg };
+    for (let r = 100; r <= 3000 && !moved.ok; r += 100) {
+      for (const [dx, dz] of [
+        [r, 0],
+        [-r, 0],
+        [0, r],
+        [0, -r],
+      ] as const) {
+        to = { xMm: x + dx, zMm: z + dz, yawDeg };
+        moved = await runMoveJob(job(to), { db, store });
+        if (moved.ok) break;
+      }
+    }
+    expect(moved.ok).toBe(true);
+    const after = await getPinnedPlace(db, alice, world, "mama_s_spot");
+    expect(after?.revision).not.toBe(before?.revision);
+    // Still standing, with what it does untouched.
+    expect(after?.spec).toBe(before?.spec);
+    const nextScene = await read(after?.scene as ArtifactHash);
+    const placed = nextScene.objects.find((o) => o.id === object?.id);
+    expect(placed?.transform.position[0]).toBe(to.xMm);
+    expect(placed?.transform.position[2]).toBe(to.zMm);
+    expect(nextScene.objects).toHaveLength(scene.objects.length);
+  });
+
+  it("someone rearranging while a slow ask runs keeps both", async () => {
+    const before = await getPinnedPlace(db, alice, world, "mama_s_spot");
+    const read = async (hash: ArtifactHash) =>
+      JSON.parse(new TextDecoder().decode((await store.get(hash)) ?? new Uint8Array()));
+    const scene = await read(before?.scene as ArtifactHash);
+    const spec = WorldSpec.parse(await read(before?.spec as ArtifactHash));
+    const object = spec.things[0]?.object as string;
+    const thing = scene.objects.find(
+      (o: { transform: { position: number[] } }) => (o.transform.position[1] ?? 0) === 0,
+    );
+    const [x = 0, , z = 0] = thing.transform.position as number[];
+    let to: { xMm: number; zMm: number; yawDeg: number } | null = null;
+    // While the model is thinking, the owner moves something.
+    const author = {
+      ...providers.author,
+      improvise: async (...args: Parameters<typeof providers.author.improvise>) => {
+        for (let r = 100; r <= 3000 && !to; r += 100) {
+          for (const [dx, dz] of [
+            [r, 0],
+            [-r, 0],
+            [0, r],
+            [0, -r],
+          ] as const) {
+            const tryTo = { xMm: x + dx, zMm: z + dz, yawDeg: Math.round(thing.transform.yawDeg) };
+            const moved = await runMoveJob(
+              {
+                worldId: world,
+                place: "mama_s_spot",
+                moves: [{ object: thing.id, ...tryTo }],
+                userId: alice.userId,
+                nonce: "abcdef77",
+              },
+              { db, store },
+            );
+            if (moved.ok) {
+              to = tryTo;
+              break;
+            }
+          }
+        }
+        return providers.author.improvise(...args);
+      },
+    };
+    const result = await runAskJob(
+      {
+        worldId: world,
+        place: "mama_s_spot",
+        object,
+        request: "dust this down",
+        nonce: "abcdef78",
+      },
+      {
+        db,
+        store,
+        providers: { author, critic: providers.critic, designer: providers.designer },
+        signal: new AbortController().signal,
+      },
+    );
+    expect(result).toMatchObject({ ok: true });
+    expect(to).not.toBeNull();
+    const after = await getPinnedPlace(db, alice, world, "mama_s_spot");
+    const nextScene = await read(after?.scene as ArtifactHash);
+    const placed = nextScene.objects.find((o: { id: string }) => o.id === thing.id);
+    // The move survived the ask, and the ask survived the move.
+    expect(placed.transform.position[0]).toBe((to as unknown as { xMm: number }).xMm);
+    const nextSpec = WorldSpec.parse(await read(after?.spec as ArtifactHash));
+    const kind = nextSpec.kinds.find(
+      (k) => k.key === nextSpec.things.find((t) => t.object === object)?.kind,
+    );
+    expect(kind?.actions.some((a) => a.label === "dust this down")).toBe(true);
   });
 
   it("asking about something that isn't there changes nothing", async () => {

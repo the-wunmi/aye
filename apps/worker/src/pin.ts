@@ -12,9 +12,12 @@ import {
   type Db,
   systemCommitRevision,
   systemGetHead,
+  systemGetPinnedPlace,
   systemPinPlace,
 } from "@aye/db";
 import type { ArtifactHash, PlaceId, PlaceRevision, Scene, UserId } from "@aye/schema";
+
+const LATEST_TRIES = 8;
 
 export async function commitAndPin(
   db: Db,
@@ -48,3 +51,37 @@ const pin = (
   placeId: PlaceId,
   revision: ArtifactHash,
 ) => systemPinPlace(db, target.worldId, { key: target.key, placeId, revision });
+
+/** What a place is now, for building its next revision on. */
+export type Latest = NonNullable<Awaited<ReturnType<typeof systemGetPinnedPlace>>>;
+
+/**
+ * Save a change on top of whatever a place has become. A revision says everything about a place,
+ * so one prepared from an older copy would undo whatever landed meanwhile: someone's rearranging
+ * lost to a slow question, or the other way round. So it's rebuilt from the latest each time,
+ * until it lands. `build` returning null gives up, leaving the place as it is.
+ */
+export async function commitOnLatest(
+  db: Db,
+  target: { worldId: string; key: string },
+  build: (latest: Latest) => Promise<{ revision: PlaceRevision; scene: Scene } | null>,
+): Promise<ArtifactHash | null> {
+  for (let attempt = 0; attempt < LATEST_TRIES; attempt++) {
+    const latest = await systemGetPinnedPlace(db, target.worldId, target.key);
+    if (!latest) return null;
+    const built = await build(latest);
+    if (!built) return null;
+    const { revision, scene } = built;
+    const hash = hashJson(revision) as ArtifactHash;
+    try {
+      const saved = await systemCommitRevision(db, revision.authorId, hash, revision, scene);
+      if (!saved) return null;
+    } catch (err) {
+      if (!(err instanceof ConflictError)) throw err;
+      continue;
+    }
+    await pin(db, target, revision.placeId, hash);
+    return hash;
+  }
+  return null;
+}

@@ -31,7 +31,7 @@ export const ClientCommand = z.discriminatedUnion("type", [
 export type ClientCommand = z.infer<typeof ClientCommand>;
 
 export const ClientMessage = z.discriminatedUnion("t", [
-  /** Travel to a place by a mode (fare and time from the city spec), or walk in if nearby. */
+  /** Travel to a place by a mode (fare and time from the city spec). */
   z.strictObject({ t: z.literal("go"), place: SpecKey, mode: SpecKey }),
   /** Travel to a place in your own vehicle: the one out with you, or yours here. */
   z.strictObject({ t: z.literal("drive"), place: SpecKey }),

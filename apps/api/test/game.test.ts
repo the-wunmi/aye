@@ -19,20 +19,24 @@ import {
   systemCommitRevision,
   systemEnsurePlace,
   systemGetPinnedPlace,
+  systemGetWorld,
   systemLinkWorldArtifacts,
   systemPinPlace,
   systemRecordArtifacts,
   systemSetWorld,
+  systemSwapWorldCity,
   tables,
 } from "@aye/db";
 import {
   type ArtifactHash,
-  type CitySpec,
+  CitySpec,
   ClientMessage,
   cityMinuteNow,
+  moversOf,
   type PlaceId,
   type PlaceRevision,
   placesOf,
+  type Scene,
   type ServerMessage,
   type UserId,
 } from "@aye/schema";
@@ -86,6 +90,8 @@ describe.skipIf(!url)("the game", () => {
   let base: string;
   let realm: Realm;
   const homesAsked: string[] = [];
+  const movesAsked: { userId: string; job: unknown }[] = [];
+  const placesChanged: string[] = [];
   let content: ReturnType<typeof contentLoader>;
   const store = new MemoryArtifactStore();
   const enqueued: string[] = [];
@@ -147,6 +153,30 @@ describe.skipIf(!url)("the game", () => {
         heard.push({ bytes: wav.byteLength, keywords });
         if (wav.byteLength > 100) throw new Error("model down");
         return `  good morning${RLO}  Auntie `;
+      },
+      moves: {
+        enqueue: async (userId, job) => {
+          movesAsked.push({ userId, job });
+          return `move-${userId}-abcdef12`;
+        },
+        status: async (id) =>
+          id.endsWith("-donedone")
+            ? {
+                status: "done" as const,
+                result: { ok: true as const, worldId: "wld_told", place: "told_place" },
+              }
+            : { status: "working" as const },
+      },
+      onPlaceChanged: (world, place) => placesChanged.push(`${world}/${place}`),
+      removals: {
+        enqueue: async (userId) => `remove-${userId}-abcdef12`,
+        status: async (id) =>
+          id.endsWith("-donedone")
+            ? {
+                status: "done" as const,
+                result: { ok: true as const, worldId: "wld_gone", place: "gone_place" },
+              }
+            : { status: "working" as const },
       },
       asks: {
         enqueue: async (userId) => {
@@ -592,12 +622,106 @@ describe.skipIf(!url)("the game", () => {
     expect(asked).toHaveLength(1);
   });
 
+  it("moving a thing: only in your own home or a place you own, and only a position", async () => {
+    const object = "obj_anything";
+    const one = { object, xMm: 1000, zMm: 2000, yawDeg: 90 };
+    const good = { moves: [one] };
+    const move = (who: string | null, place: string, body: unknown) =>
+      post(who, `/worlds/${worldId}/places/${place}/move`, body);
+    const shared = "mama_s_spot";
+
+    // Nobody, a stranger to the city, and someone who plays here but doesn't own it.
+    expect((await move(null, shared, good)).status).toBe(401);
+    expect((await move("carol", shared, good)).status).toBe(404);
+    expect((await move("bob", shared, good)).status).toBe(404);
+    expect(movesAsked).toHaveLength(0);
+
+    // A client names a position and nothing else.
+    for (const bad of [
+      { ...good, extra: 1 },
+      { moves: [] },
+      { moves: Array.from({ length: 65 }, () => one) },
+      { moves: [{ ...one, extra: 1 }] },
+      { moves: [{ ...one, xMm: 1.5 }] },
+      { moves: [{ ...one, xMm: 1e12 }] },
+      { moves: [{ ...one, yawDeg: 400 }] },
+      { moves: [{ ...one, object: "../etc" }] },
+      { moves: [{ xMm: 1, zMm: 2, yawDeg: 0 }] },
+      one,
+    ]) {
+      expect((await move("alice", shared, bad)).status).toBe(400);
+    }
+    expect((await move("alice", "Not%20A%20Key", good)).status).toBe(400);
+
+    // Whoever owns the place can, and the seen job is theirs alone.
+    const res = await move("alice", shared, good);
+    expect(res.status).toBe(202);
+    const body = (await res.json()) as { job: string; home: boolean };
+    expect(body.home).toBe(false);
+    expect(movesAsked).toHaveLength(1);
+    expect(movesAsked[0]?.userId).toBe(await idOf("alice"));
+    expect((await call("alice", `/moves/${body.job}`)).status).toBe(200);
+    expect((await call("bob", `/moves/${body.job}`)).status).toBe(404);
+    expect((await call(null, `/moves/${body.job}`)).status).toBe(401);
+    expect((await call("alice", "/moves/not-a-job")).status).toBe(404);
+
+    // Done: rooms are told, and the job's owner hears only that it worked.
+    const done = await call("alice", `/moves/move-${await idOf("alice")}-donedone`);
+    expect(await done.json()).toEqual({ status: "done", result: { ok: true } });
+    expect(placesChanged).toEqual(["wld_told/told_place"]);
+
+    // Your own home goes to your own copy, not to the shared place.
+    const actor = { kind: "user" as const, userId: (await idOf("bob")) as UserId };
+    const mine = await getMyCharacter(db, actor, worldId);
+    const home = city.starts.find((x) => x.key === mine?.start)?.home as string;
+    const before = homesAsked.length;
+    const atHome = await move("bob", home, good);
+    expect(atHome.status).toBe(202);
+    expect(((await atHome.json()) as { home: boolean }).home).toBe(true);
+    expect(homesAsked).toHaveLength(before + 1);
+    expect(movesAsked).toHaveLength(1);
+
+    // What's yours is listed, for you.
+    const yours = (who: string) =>
+      call(who, `/worlds/${worldId}/city`).then((r) => r.json() as Promise<{ yours: string[] }>);
+    expect((await yours("alice")).yours).toContain(shared);
+    expect((await yours("bob")).yours).not.toContain(shared);
+  });
+
+  it("removing a place: only what was filmed, by whoever filmed it or owns the city", async () => {
+    const del = (who: string | null, place: string) =>
+      call(who, `/worlds/${worldId}/places/${place}`, { method: "DELETE", body: "{}" });
+    const shared = "mama_s_spot";
+    expect((await del(null, shared)).status).toBe(401);
+    expect((await del("carol", shared)).status).toBe(404);
+    expect((await del("alice", "Not%20A%20Key")).status).toBe(400);
+    // A place a model built isn't filmed, so not even the city's owner can remove it this way.
+    expect((await del("alice", shared)).status).toBe(404);
+    expect((await del("bob", shared)).status).toBe(404);
+    // Cross-site: refused before anything happens.
+    const forged = await call("alice", `/worlds/${worldId}/places/${shared}`, {
+      method: "DELETE",
+      headers: { origin: "https://evil.example" },
+    });
+    expect(forged.status).toBe(403);
+    // A job names who asked.
+    expect((await call("bob", `/removals/remove-${await idOf("alice")}-donedone`)).status).toBe(
+      404,
+    );
+    expect((await call(null, `/removals/remove-${await idOf("alice")}-donedone`)).status).toBe(401);
+    const before = placesChanged.length;
+    const done = await call("alice", `/removals/remove-${await idOf("alice")}-donedone`);
+    expect(await done.json()).toEqual({ status: "done", result: { ok: true } });
+    expect(placesChanged.slice(before)).toEqual(["wld_gone/gone_place"]);
+  });
+
   it("changing a home: only your own, and the plan itself stays with the server", async () => {
     const actor = { kind: "user" as const, userId: (await idOf("bob")) as UserId };
     const mine = await getMyCharacter(db, actor, worldId);
     const home = city.starts.find((x) => x.key === mine?.start)?.home as string;
     const change = (who: string | null, body: unknown) =>
       post(who, `/worlds/${worldId}/home`, body);
+    const asked = homesAsked.length;
     const good = { place: home, request: "a green sofa by the window" };
     expect((await change(null, good)).status).toBe(401);
     expect((await change("carol", good)).status).toBe(404);
@@ -608,7 +732,7 @@ describe.skipIf(!url)("the game", () => {
     const res = await change("bob", good);
     expect(res.status).toBe(202);
     const { job } = (await res.json()) as { job: string };
-    expect(homesAsked).toHaveLength(1);
+    expect(homesAsked).toHaveLength(asked + 1);
     const seen = await call("bob", `/homes/${job}`);
     expect(seen.status).toBe(200);
     const body = await seen.text();
@@ -745,7 +869,7 @@ describe.skipIf(!url)("the game", () => {
     expect(home.place).toBe("your_flat");
     const bobKey = home.you;
 
-    const alice = await play("alice");
+    let alice = await play("alice");
     expect((await alice.next("place")).place).toBe("your_flat");
     // Homes are private: Alice's flat is her own; Bob isn't in it.
     const aliceHome = await alice.next("roster");
@@ -803,6 +927,12 @@ describe.skipIf(!url)("the game", () => {
     expect(await bob.next("refused")).toMatchObject({ what: "do", reason: "not_yours" });
     bob.send({ t: "hold", agent: aliceKey });
     expect(await bob.next("refused")).toMatchObject({ what: "hold", reason: "a_player" });
+    // Not even in the moment they're on their way out, when they're no longer listed as a player.
+    alice.ws.close();
+    bob.send({ t: "hold", agent: aliceKey });
+    expect((await bob.next("refused")).what).toBe("hold");
+    alice = await play("alice");
+    await alice.next("place");
 
     // Taking over someone the world wrote: one holder at a time.
     bob.send({ t: "hold", agent: "tolu" });
@@ -892,6 +1022,138 @@ describe.skipIf(!url)("the game", () => {
     await systemPinPlace(db, worldId, { key: here.place, placeId: rev.placeId, revision: hash });
     const reloaded = await bob.next("place", (m) => JSON.stringify(m.spec).includes("Polish it"));
     expect(reloaded.place).toBe(here.place);
+    bob.ws.close();
+  });
+
+  it("someone else's home doesn't exist for you, whatever you send", {
+    timeout: 40_000,
+  }, async () => {
+    const bob = await play("bob");
+    await bob.next("place");
+    const before = await systemGetWorld(db, worldId);
+    const now = CitySpec.parse(
+      JSON.parse(
+        new TextDecoder().decode((await store.get(before?.city as ArtifactHash)) as Uint8Array),
+      ),
+    );
+    const spot = now.items.find((i) => i.key === "mama_s_spot");
+    const mover = moversOf(now)[0]?.key as string;
+    // A home that belongs to a start bob didn't take.
+    const closed = {
+      ...now,
+      items: now.items.map((i) =>
+        i.key === spot?.key
+          ? { ...i, traits: { ...i.traits, place: { ...i.traits.place, private: true } } }
+          : i,
+      ),
+    };
+    const ref = await store.put(encodeJson(closed), "application/json");
+    await systemRecordArtifacts(db, [ref]);
+    await systemLinkWorldArtifacts(db, worldId, [ref.hash]);
+    expect(await systemSwapWorldCity(db, worldId, before?.city as ArtifactHash, ref.hash)).toBe(
+      true,
+    );
+    try {
+      bob.send({ t: "go", place: "mama_s_spot", mode: mover });
+      expect(await bob.next("refused")).toMatchObject({ what: "go", reason: "unknown" });
+      bob.send({ t: "drive", place: "mama_s_spot" });
+      expect(await bob.next("refused")).toMatchObject({ what: "drive", reason: "unknown" });
+    } finally {
+      await systemSwapWorldCity(db, worldId, ref.hash, before?.city as ArtifactHash);
+      bob.ws.close();
+    }
+  });
+
+  it("a closure the director adds reaches a room people are already in", {
+    timeout: 40_000,
+  }, async () => {
+    const bob = await play("bob");
+    const here = (await bob.next("place")) as unknown as { place: string };
+    const before = await systemGetWorld(db, worldId);
+    const now = CitySpec.parse(
+      JSON.parse(
+        new TextDecoder().decode((await store.get(before?.city as ArtifactHash)) as Uint8Array),
+      ),
+    );
+    const closed = {
+      ...now,
+      events: [
+        ...now.events,
+        {
+          key: "shut_for_a_while",
+          name: "Shut",
+          about: "Closed for now.",
+          icon: "\u{1F6A7}",
+          from: 0,
+          to: 3 * 1440,
+          effects: [{ type: "closed" as const, place: here.place }],
+        },
+      ],
+    };
+    const ref = await store.put(encodeJson(closed), "application/json");
+    await systemRecordArtifacts(db, [ref]);
+    await systemLinkWorldArtifacts(db, worldId, [ref.hash]);
+    expect(await systemSwapWorldCity(db, worldId, before?.city as ArtifactHash, ref.hash)).toBe(
+      true,
+    );
+    try {
+      const shut = await bob.next("snap", (m) => m.shut === 1);
+      expect(shut.shut).toBe(1);
+    } finally {
+      await systemSwapWorldCity(db, worldId, ref.hash, before?.city as ArtifactHash);
+      bob.ws.close();
+    }
+  });
+
+  it("a room playing a place takes a moved thing live, though what it does hasn't changed", {
+    timeout: 40_000,
+  }, async () => {
+    const bob = await play("bob");
+    const here = (await bob.next("place")) as unknown as { place: string; scene: Scene };
+    const pinned = await systemGetPinnedPlace(db, worldId, here.place);
+    const thing = here.scene.objects[0];
+    const [x = 0, y = 0, z = 0] = thing?.transform.position ?? [];
+    const moved = {
+      ...here.scene,
+      objects: here.scene.objects.map((o, i) =>
+        i === 0
+          ? {
+              ...o,
+              transform: {
+                ...o.transform,
+                position: [x + 50, y, z] as typeof o.transform.position,
+              },
+            }
+          : o,
+      ),
+    };
+    const sceneRef = await store.put(encodeJson(moved), "application/json");
+    await systemRecordArtifacts(db, [sceneRef]);
+    const owner = (await alice()).id as UserId;
+    const specRef = { hash: pinned?.spec as ArtifactHash, mediaType: "application/json", bytes: 0 };
+    const rev: PlaceRevision = {
+      placeId: pinned?.placeId as PlaceId,
+      parent: pinned?.revision as ArtifactHash,
+      base: sceneRef,
+      edits: [],
+      scene: sceneRef,
+      world: { spec: specRef, approved: false },
+      authorId: owner,
+      message: "moved",
+      createdAt: new Date().toISOString(),
+    };
+    const hash = hashJson(rev) as ArtifactHash;
+    expect(await systemCommitRevision(db, owner, hash, rev, moved)).toBe(true);
+    await systemPinPlace(db, worldId, { key: here.place, placeId: rev.placeId, revision: hash });
+    // Told it changed, the room doesn't wait for its next look round (every 10 seconds).
+    const asked = Date.now();
+    realm.placeChanged(worldId, here.place);
+    const reloaded = await bob.next(
+      "place",
+      (m) => (m.scene as Scene).objects[0]?.transform.position[0] === x + 50,
+    );
+    expect(reloaded.place).toBe(here.place);
+    expect(Date.now() - asked).toBeLessThan(5_000);
     bob.ws.close();
   });
 

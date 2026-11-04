@@ -6,8 +6,8 @@
  *
  * Nothing here knows what any place is. Draw calls stay few: one mesh per district and water
  * body, all roads merged, every building's look merged, each kind of scenery instanced.
- * What buildings and scenery look like is the city model's design: a library model it chose
- *, fitted to the building's block, else its own primitives. Library scenery is
+ * What buildings and scenery look like is the city model's design: a library model it chose,
+ * fitted to the building's block, else its own primitives. Library scenery is
  * instanced per mesh, so a hundred palms cost a handful of draw calls.
  */
 import {
@@ -24,6 +24,7 @@ import { MapControls } from "three/addons/controls/MapControls.js";
 import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
 import * as THREE from "three/webgpu";
 import { fitInto, getLibrary, type Library } from "./library.ts";
+import { CAMERA_DAMPING, MAP_LOOKS, qualityGovernor, startingLevel } from "./quality.ts";
 import { glowing, mergeSolids, type PlacedSolid, placeSolids, vertexColoured } from "./solids.ts";
 import { startRenderer } from "./start-renderer.ts";
 
@@ -116,7 +117,13 @@ export async function createCityMap(
   const backend = (renderer.backend as { isWebGPUBackend?: boolean }).isWebGPUBackend
     ? "webgpu"
     : "webgl2";
-  renderer.setPixelRatio(Math.min(2, globalThis.devicePixelRatio || 1));
+  const governor = qualityGovernor(startingLevel(), MAP_LOOKS.length - 1);
+  const mapRatio = () =>
+    Math.min(
+      (MAP_LOOKS[governor.level] as (typeof MAP_LOOKS)[number]).maxPixelRatio,
+      globalThis.devicePixelRatio || 1,
+    );
+  renderer.setPixelRatio(mapRatio());
   renderer.toneMapping = THREE.NeutralToneMapping;
   renderer.shadowMap.enabled = true;
 
@@ -129,6 +136,7 @@ export async function createCityMap(
   const camera = new THREE.PerspectiveCamera(32, 1, 10, 30_000);
   const controls = new MapControls(camera, canvas);
   controls.enableDamping = true;
+  controls.dampingFactor = CAMERA_DAMPING;
   controls.minDistance = 400;
   controls.maxDistance = 9_000;
   controls.maxPolarAngle = 1.1;
@@ -138,7 +146,7 @@ export async function createCityMap(
   scene.add(hemi);
   const sun = new THREE.DirectionalLight(0xfff0d8, 2.0);
   sun.castShadow = true;
-  sun.shadow.mapSize.set(2048, 2048);
+  sun.shadow.mapSize.setScalar(startingLevel() > 0 ? 1024 : 2048);
   scene.add(sun, sun.target);
 
   const content = new THREE.Group();
@@ -195,7 +203,6 @@ export async function createCityMap(
    * its theme gives built-up, industrial and green ground; water covers them.
    */
   function cover(land: MapLand, c: CitySpec["theme"]["colours"]): void {
-    // The city's own colours for its ground, laid lightly over its districts; water covers.
     const looks = [
       { colour: c.built, opacity: 0.35, y: 1.2 },
       { colour: c.industrial, opacity: 0.4, y: 1.4 },
@@ -558,7 +565,6 @@ export async function createCityMap(
     for (const [asset, spots] of lots) {
       const entry = library?.catalog.things.find((t) => t.id === asset);
       if (!entry || !library) continue;
-      // Drawn chunky like the places (mapBlock), within a lot.
       const [rw, rh, rd] = entry.sizeMm.map((v) => (v / 1000) * 2.4) as [number, number, number];
       // Chunky like the places: a lot-sized footprint, its height near its proportions.
       const k = LOT_M / Math.max(rw, rd);
@@ -890,7 +896,6 @@ export async function createCityMap(
   };
   const onUp = (e: PointerEvent) => {
     fingers.delete(e.pointerId);
-    // A fingertip wobbles more than a mouse.
     const reach = e.pointerType === "touch" ? TOUCH_TAP_PX : 5;
     if (!down || Math.hypot(e.clientX - down.x, e.clientY - down.y) > reach || !blocks || !city) {
       down = null;
@@ -934,7 +939,20 @@ export async function createCityMap(
     offsetFrom: THREE.Vector3;
     t: number;
   } | null = null;
+  let lastFrame = performance.now();
+  let frameCount = 0;
   renderer.setAnimationLoop(() => {
+    const frameAt = performance.now();
+    if (governor.frame(frameAt - lastFrame)) {
+      renderer.setPixelRatio(mapRatio());
+      resize();
+    }
+    lastFrame = frameAt;
+    frameCount++;
+    sun.shadow.autoUpdate = false;
+    sun.shadow.needsUpdate =
+      frameCount % (MAP_LOOKS[governor.level] as (typeof MAP_LOOKS)[number]).shadowEveryFrames ===
+      0;
     if (flight) {
       flight.t = Math.min(1, flight.t + 0.04);
       const k = flight.t * flight.t * (3 - 2 * flight.t);
@@ -984,7 +1002,7 @@ export async function createCityMap(
         to: new THREE.Vector3(p.at[0], 0, p.at[1]),
         camFrom: camera.position.clone(),
         offsetFrom,
-        // Close: about 1.2 km out and 40 degrees down: buildings to read, and the places around.
+        // Close: about 1.4 km out and 40 degrees down: buildings to read, and the places around.
         offsetTo: opts.close ? new THREE.Vector3(310, 890, 1060).multiplyScalar(zoomOut) : null,
         t: 0,
       };

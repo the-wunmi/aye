@@ -11,10 +11,28 @@ import {
   type ClientCommand,
   emptyCost,
   heldActionTicks,
+  type ObjectId,
   type RosterEntry,
+  type Scene,
   type WorldSettings,
 } from "@aye/schema";
-import { type MutableRefObject, type PointerEvent, useEffect, useRef, useState } from "react";
+import {
+  canBeMoved,
+  carriedBy,
+  footingCheck,
+  type MoveOf,
+  moveThing,
+  moveThings,
+  standingCheck,
+} from "@aye/sim";
+import {
+  type MutableRefObject,
+  type PointerEvent,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { durationText, money } from "../format.ts";
 
 /** How long it really takes to watch, for someone being played: long things are sped up. */
@@ -52,7 +70,8 @@ export interface CameraControls {
 }
 
 const EDGE_PX = 8;
-/** Room left for the clock and the bar along the top of the screen. */
+/** How long to wait for the room to take a saved move, a tenth of a second at a time. */
+const ROOM_TAKES_MOVE_POLLS = 150;
 /** Room above a menu when the HUD's top row can't be measured. */
 const HUD_TOP_PX = 76;
 const clampTo = (v: number, least: number, most: number) => Math.max(least, Math.min(most, v));
@@ -71,6 +90,10 @@ export function PlaceView({
   follow,
   controls,
   onAsk,
+  canMove,
+  ownCopy,
+  onUnsavedMoves,
+  onMove,
   onPanel,
   panelLabel,
   onBackend,
@@ -94,6 +117,14 @@ export function PlaceView({
   closenessOf(person: string): number;
   /** Ask a thing for something it can't do yet. */
   onAsk(object: string, request: string): void;
+  /** This place is yours to rearrange. */
+  canMove: boolean;
+  /** It's your own private copy of it: nobody else will see what you change. */
+  ownCopy: boolean;
+  /** Whether there are moves not saved yet, for asking before they're lost. */
+  onUnsavedMoves(any: boolean): void;
+  /** Save everything moved; true if the place took it. */
+  onMove(moves: MoveOf[]): Promise<boolean>;
   /** Open one of the city's panels (a thing here that is one was tapped). */
   onPanel(key: string): void;
   panelLabel(key: string): { label: string; icon: string } | null;
@@ -106,6 +137,28 @@ export function PlaceView({
   const [thing, setThing] = useState<string | null>(null);
   const [person, setPerson] = useState<number | null>(null);
   const [hovered, setHovered] = useState<string | null>(null);
+  /** What was last tapped while rearranging, for turning; and whether a move is being saved. */
+  const [pointedAt, setPointedAt] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+  const savingRef = useRef(false);
+  /** Why the last move couldn't be made. */
+  const [cantBecause, setCantBecause] = useState<string | null>(null);
+  /**
+   * The rearrangement so far, nothing of it saved: each step, and the room before it, for undoing.
+   * In a ref because a drag reads it mid-gesture; `drafted` is what makes the buttons follow it.
+   */
+  const draft = useRef<{ before: Scene; move: MoveOf }[]>([]);
+  const draftScene = useRef<Scene | null>(null);
+  const [drafted, setDrafted] = useState(0);
+  /** Rearranging: everything movable is marked, and tapping one picks it up. */
+  const [arranging, setArranging] = useState(false);
+  const arrangingRef = useRef(arranging);
+  arrangingRef.current = arranging;
+  const dropRef = useRef<(id: ObjectId, to: { xMm: number; zMm: number; yawDeg: number }) => void>(
+    () => undefined,
+  );
+  const placeRef = useRef(place);
+  placeRef.current = place;
   const { state, send } = game;
   const roster = state.roster;
   const rosterRef = useRef(roster);
@@ -133,18 +186,32 @@ export function PlaceView({
       };
       onBackend(r.backend);
       r.onSelect((id) => {
+        if (arrangingRef.current) {
+          setCantBecause(null);
+          setPointedAt(id);
+          return;
+        }
         setThing(id);
         setPerson(null);
       });
       r.onHover(setHovered);
+      r.onDrop((id, to) => dropRef.current(id as ObjectId, to));
       r.onPerson((slot) => {
+        if (arrangingRef.current) return;
         setPerson(slot);
         setThing(null);
       });
       r.onGround((x, z) => {
+        if (arrangingRef.current) return;
         setThing(null);
         setPerson(null);
         command({ type: "walk", x, z });
+      });
+      r.setPlacementCheck((id) => {
+        const { scene: saved, spec } = placeRef.current;
+        const scene = draftScene.current ?? saved;
+        const check = standingCheck(scene, spec, id as ObjectId);
+        return check && ((xMm, zMm, yawDeg) => check({ xMm, zMm, yawDeg }) === null);
       });
       setReady(true);
       // On a phone a menu is a sheet from the bottom, wherever its thing or person is.
@@ -224,12 +291,31 @@ export function PlaceView({
     // The same place again (extended live) keeps the view; a new place is framed afresh.
     const same = loadedKey.current === place.key;
     loadedKey.current = place.key;
-    renderer.current?.loadScene(place.scene, place.spec, {
+    // Someone else changed the place mid-rearrangement: what's been done so far goes on top of it.
+    let shown = place.scene;
+    if (same && !savingRef.current && draft.current.length > 0) {
+      const again = draft.current.map((d) => d.move);
+      const replayed = moveThings(place.scene, place.spec, again);
+      if (replayed.ok) {
+        shown = replayed.scene;
+        draftScene.current = replayed.scene;
+      } else {
+        draft.current = [];
+        draftScene.current = null;
+        setDrafted(0);
+      }
+    }
+    renderer.current?.loadScene(shown, place.spec, {
       things: place.things,
       resources: place.spec.resources.map((r) => r.key),
       keepCamera: same,
     });
     if (!same) {
+      draft.current = [];
+      draftScene.current = null;
+      setDrafted(0);
+      setArranging(false);
+      setPointedAt(null);
       setThing(null);
       setPerson(null);
     }
@@ -244,11 +330,43 @@ export function PlaceView({
     r.setYou(roster.find((e) => e.key === acting)?.slot ?? null);
   }, [ready, roster, acting, outfits]);
 
+  useEffect(() => {
+    onUnsavedMoves(drafted > 0);
+    return () => onUnsavedMoves(false);
+  }, [drafted, onUnsavedMoves]);
+
+  // Everything that can be moved stays highlighted while rearranging, and pressing it picks it up.
+  useEffect(() => {
+    const r = renderer.current;
+    if (!ready || !r) return;
+    if (!arranging) {
+      r.setRearranging(null);
+      r.setMovable([]);
+      return;
+    }
+    const now = () => draftScene.current ?? placeRef.current.scene;
+    const can = new Set(place.scene.objects.filter(canBeMoved).map((o) => o.id as string));
+    r.setRearranging({
+      // Something resting on another thing moves it: the TV is how you'd grab what it stands on.
+      grab(id) {
+        if (savingRef.current) return null;
+        if (can.has(id)) return id;
+        for (const base of can) {
+          if (carriedBy(now(), base as ObjectId).some((o) => o.id === id)) return base;
+        }
+        return null;
+      },
+      carried: (id) => carriedBy(now(), id as ObjectId).map((o) => o.id),
+    });
+    r.setMovable([...can]);
+  }, [ready, arranging, place, drafted]);
+
   // Follow whoever you're playing (once they're here), or look at the whole place.
   const actingSlotNow = roster.find((e) => e.key === acting)?.slot ?? null;
   useEffect(() => {
-    if (ready) renderer.current?.follow(follow ? actingSlotNow : null);
-  }, [ready, follow, actingSlotNow]);
+    // Placing something needs the whole room in view, not the back of your own head.
+    if (ready) renderer.current?.follow(follow && !arranging ? actingSlotNow : null);
+  }, [ready, follow, actingSlotNow, arranging]);
 
   useEffect(
     () =>
@@ -272,6 +390,13 @@ export function PlaceView({
     [game.onSnap],
   );
 
+  const footing = useMemo(
+    () => footingCheck(place.scene, place.spec, settings.gridCellMm),
+    [place.scene, place.spec, settings.gridCellMm],
+  );
+  useEffect(() => {
+    if (ready) renderer.current?.setFooting(footing);
+  }, [ready, footing]);
   const steering = useSteering(
     ready ? renderer.current : null,
     actingSlotNow,
@@ -282,10 +407,27 @@ export function PlaceView({
       setThing(null);
       setPerson(null);
     },
+    () => {
+      const entry = roster.find((e) => e.key === acting);
+      const base = entry?.person.body.speedMmPerS ?? 1_200;
+      const snap = state.snap;
+      const slot = entry?.slot;
+      if (!snap || slot === undefined) return base;
+      const count = place.spec.needs.length;
+      const { walkPermille } = emptyCost(
+        place.spec.needs,
+        (_, j) => snap.needs[slot * count + j] ?? 1,
+      );
+      return (base * walkPermille) / 1000;
+    },
+    footing,
   );
   steerRef.current = (x, y) => steering.setStick(x, y);
 
-  useEffect(() => renderer.current?.setSelected(thing), [thing]);
+  // While rearranging, the ring is on what was last tapped.
+  useEffect(() => {
+    renderer.current?.setSelected(arranging ? pointedAt : thing);
+  }, [thing, arranging, pointedAt, drafted]);
   useEffect(() => {
     if (ready) renderer.current?.setMarks(marks ?? []);
   }, [marks, ready]);
@@ -324,7 +466,6 @@ export function PlaceView({
   const actingSlot = slotOf.get(acting);
   const wallet = snap && actingSlot !== undefined ? (snap.wallet[actingSlot] ?? 0) : 0;
 
-  // What the tapped thing can do.
   const obj = place.scene.objects.find((o) => o.id === thing);
   const def = place.spec.things.find((t) => t.object === thing);
   const kind = place.spec.kinds.find((k) => k.key === def?.kind);
@@ -342,10 +483,163 @@ export function PlaceView({
       : "\u2026";
   const tapped = person === null ? null : roster.find((r) => r.slot === person);
 
+  const nameOf = (id: string) => {
+    const kind = place.spec.things.find((t) => t.object === id)?.kind;
+    return (
+      place.spec.kinds.find((k) => k.key === kind)?.label ??
+      place.scene.objects.find((o) => o.id === id)?.label ??
+      "Something"
+    );
+  };
+  /** Try a thing here, in the draft: the same check the server will make when it's saved. */
+  const tryMove = (id: ObjectId, to: { xMm: number; zMm: number; yawDeg: number }) => {
+    const r = renderer.current;
+    if (!r || savingRef.current) return;
+    const before = draftScene.current ?? place.scene;
+    const m = moveThing(before, place.spec, id, to);
+    if (!m.ok) {
+      // Back where it stood, and whatever came along with it.
+      const riders = carriedBy(before, id);
+      const self = before.objects.filter((o) => o.id === id);
+      r.placeThings([...self, ...riders]);
+      setCantBecause(m.reason);
+      r.setMovable(place.scene.objects.filter(canBeMoved).map((o) => o.id));
+      r.setSelected(pointedAt);
+      return;
+    }
+    setCantBecause(null);
+    draft.current = [...draft.current, { before, move: { object: id, ...to } }];
+    draftScene.current = m.scene;
+    r.placeThings(m.moved);
+    setPointedAt(id);
+    setDrafted(draft.current.length);
+  };
+  dropRef.current = tryMove;
+  const turn = () => {
+    const o = (draftScene.current ?? place.scene).objects.find((x) => x.id === pointedAt);
+    if (!o) return;
+    const [xMm = 0, , zMm = 0] = o.transform.position;
+    tryMove(o.id, { xMm, zMm, yawDeg: (Math.round(o.transform.yawDeg) + 45) % 360 });
+  };
+  const undo = () => {
+    const last = draft.current.at(-1);
+    const now = draftScene.current;
+    if (!last || !now || savingRef.current) return;
+    const changed = last.before.objects.filter((o) => {
+      const here = now.objects.find((x) => x.id === o.id);
+      return here && JSON.stringify(here.transform) !== JSON.stringify(o.transform);
+    });
+    renderer.current?.placeThings(changed);
+    draft.current = draft.current.slice(0, -1);
+    draftScene.current = draft.current.length > 0 ? last.before : null;
+    setCantBecause(null);
+    setDrafted(draft.current.length);
+  };
+  const leaveRearranging = () => {
+    draft.current = [];
+    draftScene.current = null;
+    setDrafted(0);
+    setArranging(false);
+    setPointedAt(null);
+    setCantBecause(null);
+  };
+  /** Done: everything goes to the server together, and the room here comes back with it. */
+  const save = async () => {
+    const final = draftScene.current;
+    if (savingRef.current) return;
+    if (!final || draft.current.length === 0) {
+      leaveRearranging();
+      return;
+    }
+    savingRef.current = true;
+    setSaving(true);
+    setCantBecause(null);
+    const took = await onMove(draft.current.map((d) => d.move));
+    if (took) {
+      const ids = new Set(draft.current.map((d) => d.move.object as string));
+      const same = (a: Scene, b: Scene) =>
+        [...ids].every((id) => {
+          const pose = (s: Scene) => s.objects.find((o) => o.id === id)?.transform;
+          return JSON.stringify(pose(a)) === JSON.stringify(pose(b));
+        });
+      for (let i = 0; i < ROOM_TAKES_MOVE_POLLS; i++) {
+        if (same(placeRef.current.scene, final)) break;
+        await new Promise((done) => setTimeout(done, 100));
+      }
+      leaveRearranging();
+    }
+    savingRef.current = false;
+    setSaving(false);
+  };
+
   return (
     <div className="stage">
       {!ready && <StillDrawing />}
+      {canMove && !arranging && (
+        <button
+          type="button"
+          className="sys-pill rearrange-open"
+          onClick={() => {
+            setThing(null);
+            setPerson(null);
+            setCantBecause(null);
+            setPointedAt(null);
+            setArranging(true);
+          }}
+        >
+          <span aria-hidden>{"\u{1FA91}"}</span> Rearrange
+        </button>
+      )}
+      {arranging && (
+        <div className="move-bar" role="dialog" aria-label="Rearrange">
+          <span className={cantBecause ? "move-hint t-bad" : "move-hint"}>
+            {saving
+              ? "Saving\u2026"
+              : (cantBecause ??
+                (pointedAt
+                  ? nameOf(pointedAt)
+                  : ownCopy
+                    ? "Drag anything blue. This is your own copy: only you see it."
+                    : "Drag anything blue to move it. Everyone here will see it."))}
+          </span>
+          <div className="move-buttons">
+            {pointedAt && (
+              <button
+                type="button"
+                className="mini move-icon"
+                disabled={saving}
+                aria-label="Turn it"
+                title="Turn it"
+                onClick={turn}
+              >
+                <Icon path="M12 5V2L8 6l4 4V7a5 5 0 1 1-5 5H5a7 7 0 1 0 7-7z" />
+              </button>
+            )}
+            <button
+              type="button"
+              className="mini move-icon"
+              disabled={saving || drafted === 0}
+              aria-label="Undo"
+              title="Undo"
+              onClick={undo}
+            >
+              <Icon path="M12.5 8c-2.6 0-5 1-6.9 2.6L2 7v9h9l-3.6-3.6A8 8 0 0 1 20.9 16l2.4-.8A10.5 10.5 0 0 0 12.5 8z" />
+            </button>
+            <button
+              type="button"
+              className="primary move-icon"
+              disabled={saving}
+              aria-label={drafted > 0 ? "Save" : "Done"}
+              title={drafted > 0 ? "Save" : "Done"}
+              onClick={() => void save()}
+            >
+              <Icon path="M9 16.2 4.8 12l-1.4 1.4L9 19 21 7l-1.4-1.4z" />
+            </button>
+          </div>
+        </div>
+      )}
       <canvas ref={canvas} className="stage-canvas" aria-label={place.spec.name} />
+      <SpeedReadout renderer={renderer} />
       <div className="overlay" ref={overlay}>
         {roster
           .filter((r) => r.player || r.heldBy)
@@ -439,7 +733,8 @@ export function PlaceView({
                     {(a.marks ?? []).map((m) => {
                       const label =
                         place.spec.marks?.find((x) => x.key === m.mark)?.label ?? m.mark;
-                      // Practice takes time, so what's free to try builds a skill rather than promising it.
+                      // Practice takes time: what's free to try builds a skill, it doesn't
+                      // promise one.
                       if (m.by > 0 && a.cost === 0) return ` · builds ${label}`;
                       return ` · ${m.by > 0 ? "+" : ""}${m.by} ${label}`;
                     })}
@@ -455,6 +750,23 @@ export function PlaceView({
                 </button>
               );
             })}
+            {!canMove && canBeMoved(obj) && (
+              <p className="muted small">Only whoever owns this place can move things here.</p>
+            )}
+            {canMove && canBeMoved(obj) && (
+              <button
+                type="button"
+                className="menu-action"
+                onClick={() => {
+                  setThing(null);
+                  setCantBecause(null);
+                  setPointedAt(obj.id);
+                  setArranging(true);
+                }}
+              >
+                <span className="grow">Move this</span>
+              </button>
+            )}
             <AskBox onAsk={(request) => onAsk(obj.id, request)} />
           </div>
         )}
@@ -532,6 +844,35 @@ function AskBox({ onAsk }: { onAsk(request: string): void }) {
       </button>
     </form>
   );
+}
+
+/** A plain icon for a button: the shape is ours, and the button says what it does. */
+function Icon({ path }: { path: string }) {
+  return (
+    <svg viewBox="0 0 24 24" width="24" height="24" fill="currentColor" aria-hidden="true">
+      <path d={path} />
+    </svg>
+  );
+}
+
+/** `#speed` in the address shows how a real device is keeping up. Nobody sees it otherwise. */
+function SpeedReadout({ renderer }: { renderer: MutableRefObject<Renderer | null> }) {
+  const [text, setText] = useState("");
+  const on = location.hash.includes("speed");
+  useEffect(() => {
+    if (!on) return;
+    const every = setInterval(() => {
+      const s = renderer.current?.speed();
+      if (s) {
+        const at = s.you ? ` · at ${s.you.xMm},${s.you.zMm}` : "";
+        setText(
+          `${s.fps} fps · level ${s.level} · ${s.drawCalls} draws · ${s.triangles} tris${at}`,
+        );
+      }
+    }, 100);
+    return () => clearInterval(every);
+  }, [on, renderer]);
+  return on ? <div className="speed-readout">{text}</div> : null;
 }
 
 /** Development only: `#time=12:00` in the address fixes the light, to look at a place by day. */

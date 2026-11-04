@@ -1,3 +1,4 @@
+/** City specs: their checks, trait views, bills, the cost of empty needs, and trip arithmetic. */
 import { describe, expect, it } from "vitest";
 import { nextBill, settleBills } from "../src/city-spec.ts";
 import { sampleCity } from "../src/fixtures.ts";

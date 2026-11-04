@@ -1,3 +1,4 @@
+/** The WAV encoder writes what the transcriber takes, and clips loud sound, never wraps it. */
 import { describe, expect, it } from "vitest";
 import { wavFromSamples } from "../src/game/voice.ts";
 

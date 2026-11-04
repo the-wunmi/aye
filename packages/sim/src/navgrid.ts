@@ -407,7 +407,7 @@ function computeClearance(grid: NavGrid): void {
   }
 }
 
-/** Why a single move between neighbouring cells fails for a profile. */
+/** Why a single move between neighbouring cells fails for a body. */
 export const Block = {
   None: 0,
   Solid: 1,

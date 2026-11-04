@@ -20,7 +20,7 @@ export const NETWORK_BOUNDS = {
   nodes: 200_000,
   links: 250_000,
   names: 20_000,
-  /** Shape points per link (curves), beyond its two ends. */
+  /** Shape points (curves) across all links, beyond each link's two ends. */
   shapePoints: 400_000,
   lanes: 8,
   speedKmh: { min: 5, max: 130 },
@@ -46,7 +46,7 @@ export type RoadClass = (typeof ROAD_CLASSES)[number];
 /** Classes up to and including this index are roads. */
 export const LAST_ROAD_CLASS = ROAD_CLASSES.indexOf("local");
 
-/** Which network a way to get around travels on (absent: the roads). */
+/** Which network a way to get around travels on. */
 export const WAYS = ["road", "water", "rail"] as const;
 export type Way = (typeof WAYS)[number];
 

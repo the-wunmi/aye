@@ -1,3 +1,7 @@
+/**
+ * Tests for keeping the ways through a place clear: `clearWays`, `openSealedSpaces`,
+ * `bringInside`, `makeWayThrough` and `bringWithinReach`.
+ */
 import { type LevelId, type ObjectId, Scene } from "@aye/schema";
 import { sampleFlat, sampleSettings, sampleSpec } from "@aye/schema/fixtures";
 import { buildNavGrid, cellAt, cutOff, entryCells, floodFill } from "@aye/sim";

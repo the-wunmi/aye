@@ -1,3 +1,7 @@
+/**
+ * Tests for the director with a scripted model: compiling what it decides (events, threads, aims)
+ * under the city's rules, and a whole turn.
+ */
 import { MemoryArtifactStore, MemoryRecipeIndex } from "@aye/artifacts";
 import {
   AIM_NEVER_DUE,

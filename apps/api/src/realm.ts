@@ -122,7 +122,7 @@ export interface RealmDeps {
   } | null>;
   /**
    * A player with nothing to do: their world's director gives them something (at most once
-   * per `key`, here a city day). Absent: they wait for its next turn.
+   * per `key`: a city day, or the thread they just ended). Absent: they wait for its next turn.
    */
   welcome?: (worldId: string, userId: string, key: string) => Promise<void>;
   now?: () => number;
@@ -182,6 +182,8 @@ interface Room {
   /** The pinned revision this room plays; a newer pin (someone asked for something) reloads it. */
   revision: string;
   checking: boolean;
+  /** The place changed while it was being checked: look again as soon as that's done. */
+  recheck?: boolean;
   /** Their own copy of a home: it doesn't follow the place's pinned revisions. */
   personal: boolean;
   /** Whose home this is (their person key), for a private place. */
@@ -241,7 +243,7 @@ const failed = (what: string) => (err: unknown) => {
 
 /**
  * How long a player's character waits for them before looking after themselves (real ms): long
- * enough that someone watching a job finish or reading their phone is never overruled; it's
+ * enough that someone watching a job finish or reading a panel is never overruled; it's
  * for players who have walked away.
  */
 export const SELF_CARE_AFTER_MS = 10 * 60_000;
@@ -357,7 +359,9 @@ export class Realm {
       this.#travel(player, trip.to, Math.max(0, Date.parse(trip.arrivesAt) - now), null);
     } else {
       const start = args.city.starts.find((s) => s.key === args.character.start);
-      const at = args.character.place ?? start?.home ?? null;
+      // Where they last were may have been taken away since.
+      const there = placesOf(args.city).some((p) => p.key === args.character.place);
+      const at = (there ? args.character.place : null) ?? start?.home ?? null;
       if (at) await this.#enter(player, at);
     }
     this.#broadcastPresence(args.world.id);
@@ -375,6 +379,17 @@ export class Realm {
           .catch(failed("leave"));
       },
     };
+  }
+
+  /** A place just changed and someone's waiting to see it: don't leave it to the next check. */
+  placeChanged(worldId: string, placeKey: string): void {
+    for (const room of this.#rooms.values()) {
+      if (room.worldId !== worldId || room.placeKey !== placeKey) continue;
+      const someone = room.players.values().next().value;
+      if (!someone) continue;
+      if (room.checking) room.recheck = true;
+      else void this.#reloadIfChanged(room, someone.world);
+    }
   }
 
   /** Someone signed out: their open connections end too (sessions are checked on opening). */
@@ -489,7 +504,11 @@ export class Realm {
     const room = player.room;
     if (!room) return this.#refuse(player, "hold", "not_in_a_place");
     if (room.sim.slotOf(agent) < 0) return this.#refuse(player, "hold", "not_here");
-    if (room.characters.has(agent)) return this.#refuse(player, "hold", "a_player");
+    // Only people the world wrote. Asking who's a player in the room isn't enough: someone leaving
+    // stops being listed a moment before they stop being here, and could be taken in that moment.
+    if (!room.spec.people.some((p) => p.key === agent)) {
+      return this.#refuse(player, "hold", "a_player");
+    }
     const holder = room.held.get(agent);
     if (holder && holder !== player) return this.#refuse(player, "hold", "taken");
     if (player.holding && player.holding !== agent) this.#release(player);
@@ -681,12 +700,18 @@ export class Realm {
     }
   }
 
+  /** Someone else's home doesn't exist for you: the map hides it, and this is what enforces it. */
+  #mayGo(player: Player, dest: { key: string; private?: boolean }): boolean {
+    if (!dest.private) return true;
+    return player.city.starts.find((s) => s.key === player.character.start)?.home === dest.key;
+  }
+
   async #goNow(player: Player, placeKey: string, modeKey: string): Promise<void> {
     await this.#fresh(player);
     const { city, world } = player;
     const dest = placesOf(city).find((p) => p.key === placeKey);
     const mode = moversOf(city).find((m) => m.key === modeKey);
-    if (!dest || !mode) return this.#refuse(player, "go", "unknown");
+    if (!dest || !mode || !this.#mayGo(player, dest)) return this.#refuse(player, "go", "unknown");
     if (player.room?.placeKey === placeKey) return this.#refuse(player, "go", "already_here");
     // Its hours and whatever the city is going through (a closure, a strike, a fuel queue).
     const minute = this.#cityMinutes(world);
@@ -777,7 +802,7 @@ export class Realm {
     await this.#fresh(player);
     const { city, world } = player;
     const dest = placesOf(city).find((p) => p.key === placeKey);
-    if (!dest) return this.#refuse(player, "drive", "unknown");
+    if (!dest || !this.#mayGo(player, dest)) return this.#refuse(player, "drive", "unknown");
     if (player.room?.placeKey === placeKey) return this.#refuse(player, "drive", "already_here");
     if (!placeOpen(dest, city.events, this.#cityMinutes(world))) {
       return this.#refuse(player, "drive", "closed");
@@ -1023,7 +1048,7 @@ export class Realm {
   /**
    * Buy what a job of theirs proposed for their own home. Everything comes from the server: the
    * job has to be theirs, they have to be home, and it has to still be a change from what's
-   * there now. The fare's taken from the sim; the room becomes the new home, live.
+   * there now. The price is taken from the sim; the room becomes the new home, live.
    */
   async #buyHome(player: Player, job: string): Promise<void> {
     if (player.buying) return this.#refuse(player, "do", "not_now");
@@ -1097,14 +1122,39 @@ export class Realm {
     if (shut !== (room.sim.shut === 1)) room.pending.push({ type: "shut", on: shut });
   }
 
+  /** The place was taken away: everyone in it goes home, and says why. */
+  async #placeGone(room: Room): Promise<void> {
+    for (const player of [...room.players]) {
+      await this.#fresh(player);
+      const home = player.city.starts.find((s) => s.key === player.character.start)?.home;
+      await this.#leave(player);
+      this.#refuse(player, "place", "place_removed");
+      if (home && home !== room.placeKey) await this.#enter(player, home);
+    }
+  }
+
   /** If the place has a newer pinned revision, carry the room over to it, live. */
   async #reloadIfChanged(room: Room, world: WorldDetail): Promise<void> {
     const someone = room.players.values().next().value;
     if (!someone) return;
     room.checking = true;
     try {
+      // The director changes the city while people are in it: closures have to reach this room.
+      const latest = await getWorld(this.#deps.db, someone.actor, room.worldId);
+      if (latest?.city && latest.city !== someone.world.city) {
+        const city = await this.#deps.content.city(latest.city);
+        for (const p of room.players) {
+          p.city = city;
+          p.world = { ...p.world, city: latest.city };
+        }
+        this.#keepHours(room, world);
+      }
       const pinned = await getPinnedPlace(this.#deps.db, someone.actor, world.id, room.placeKey);
-      if (!pinned?.spec || pinned.revision === room.revision) return;
+      if (!pinned) {
+        await this.#placeGone(room);
+        return;
+      }
+      if (!pinned.spec || pinned.revision === room.revision) return;
       const [pinnedScene, pinnedSpec] = await Promise.all([
         this.#deps.content.scene(pinned.scene),
         this.#deps.content.spec(pinned.spec),
@@ -1113,7 +1163,8 @@ export class Realm {
       const scene = room.personal ? room.scene : pinnedScene;
       const spec = room.personal ? carryAsked(room.spec, pinnedSpec) : pinnedSpec;
       room.revision = pinned.revision;
-      if (spec === room.spec) return;
+      // Either can change alone: a thing moved leaves what everything does exactly as it was.
+      if (spec === room.spec && scene === room.scene) return;
       room.sim = Sim.rebuild(room.sim, {
         scene,
         spec,
@@ -1128,6 +1179,10 @@ export class Realm {
       // Try again next time.
     } finally {
       room.checking = false;
+      if (room.recheck) {
+        room.recheck = false;
+        void this.#reloadIfChanged(room, world);
+      }
     }
   }
 

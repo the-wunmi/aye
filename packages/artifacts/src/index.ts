@@ -1,3 +1,4 @@
+/** @aye/artifacts for any runtime; the Node filesystem stores are in `./node.ts`. */
 export { canonicalJson } from "./canonical.ts";
 export {
   deriveId,

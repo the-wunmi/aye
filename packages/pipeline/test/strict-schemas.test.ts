@@ -27,6 +27,7 @@ import { makeYoursSchema } from "../src/make-yours.ts";
 import { jsonSchemaFor, MuseError, museJson } from "../src/muse.ts";
 import { PaintPlan } from "../src/paint.ts";
 import { PopulationDraft } from "../src/populate.ts";
+import { RebuildVerdict, ReconstructPlan } from "../src/reconstruct.ts";
 
 const SENT: Record<string, z.ZodType> = {
   ArrangeAnswer,
@@ -38,6 +39,8 @@ const SENT: Record<string, z.ZodType> = {
   LookReview,
   PaintPlan,
   PersonRedesign,
+  RebuildVerdict,
+  ReconstructPlan,
   PopulationDraft,
   SceneUnderstanding,
   SolidsRedesign,

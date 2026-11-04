@@ -27,7 +27,7 @@ const Env = z
       .min(1)
       .default(fileURLToPath(new URL("../../../.aye/artifacts", import.meta.url))),
     /**
-     * Development-only identity header (x-aye-dev-user). Real authentication replaces this.
+     * Development-only identity header (x-aye-dev-user), honoured only without a session.
      * Refused in production so it can never become a backdoor.
      */
     AYE_DEV_AUTH: z.enum(["0", "1"]).default("0"),

@@ -1,3 +1,7 @@
+/**
+ * Tests for grounding a city on real maps, from fixture Overpass answers: roads, lines, land,
+ * districts and `groundCity` as a whole.
+ */
 import { MemoryArtifactStore, MemoryRecipeIndex } from "@aye/artifacts";
 import {
   type CitySpec,

@@ -1,12 +1,13 @@
 /**
  * Furnishing: after a place's world is written, a model picks real library models
  * for what it contains: a model for each kind of thing, an outfit for each person, a surface
- * for each floor and the walls; and, for a city, the outfits new arrivals choose from.
+ * for each floor and the walls; and, for a city, the outfits new arrivals choose from, a
+ * building for each place, models for what stands on its map and what its streets are lined with.
  *
  * The model only *chooses*, by id, from the catalog code curated. Every choice is checked
  * against the catalog (the right category, a surface fit for its use) and anything else is
  * dropped, so the worst a bad answer can do is leave something drawn from its primitives.
- * Only looks change: rules, people and money stay exactly as written and play-tested.
+ * Only looks change, and which panel a thing opens: rules, people and money stay as play-tested.
  * Each furnishing is a memoised stage keyed by the spec, the scene and the catalog, so a new
  * library refurnishes and an unchanged one replays with no model call.
  */

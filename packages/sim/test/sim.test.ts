@@ -1,3 +1,4 @@
+/** The place sim on the sample flat: RNG, nav grid, bodies, actions, stateful things, rebuilds. */
 import {
   applyEdits,
   EditOp,

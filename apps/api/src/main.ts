@@ -1,3 +1,8 @@
+/**
+ * The API process: connects config, the database, the artifact store and the worker's queue to
+ * the HTTP app and the realm, and stops them in order on a signal. Jobs are only enqueued from
+ * here; the worker runs them and holds the model keys, voice transcription aside.
+ */
 import type { Server } from "node:http";
 import { FsArtifactStore } from "@aye/artifacts/node";
 import { connect } from "@aye/db";
@@ -8,10 +13,14 @@ import {
   enqueueCapture,
   enqueueCityBuild,
   enqueueHome,
+  enqueueMove,
   enqueueQuestion,
+  enqueueRemove,
   enqueueWelcome,
   homeStatus,
+  moveStatus,
   questionStatus,
+  removeStatus,
 } from "@aye/worker/jobs";
 import { DBOSClient } from "@dbos-inc/dbos-sdk";
 import { serve } from "@hono/node-server";
@@ -34,6 +43,7 @@ const app = createApp({
   env,
   db,
   onSignOut: (userId) => realm.signedOut(userId),
+  onPlaceChanged: (worldId, placeKey) => realm.placeChanged(worldId, placeKey),
   store,
   content,
   enqueueCity: async (worldId) => {
@@ -48,6 +58,14 @@ const app = createApp({
   asks: {
     enqueue: (userId, job) => enqueueAsk(queue, userId, job as never),
     status: (id) => askStatus(queue, id),
+  },
+  removals: {
+    enqueue: (userId, job) => enqueueRemove(queue, userId, job as never),
+    status: (id) => removeStatus(queue, id),
+  },
+  moves: {
+    enqueue: (userId, job) => enqueueMove(queue, userId, job as never),
+    status: (id) => moveStatus(queue, id),
   },
   homes: {
     enqueue: (userId, job) => enqueueHome(queue, userId, job as never),

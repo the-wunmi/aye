@@ -34,7 +34,7 @@ export const Place = z.object({
   name: z.string().min(1).max(120),
   visibility: Visibility,
   geo: GeoAnchor.nullable(),
-  /** Latest revision, or null until the first capture compiles. */
+  /** Latest revision, or null until the place is first built. */
   head: ArtifactHash.nullable(),
   createdAt: Timestamp,
   updatedAt: Timestamp,
@@ -69,7 +69,7 @@ export type EditOp = z.infer<typeof EditOp>;
 
 /**
  * The place's world: the latest world spec a model wrote for it, and whether its owner
- * approved it. Only an approved spec is played by others or pinned into shared worlds.
+ * approved it. A city's places are pinned and played by its members either way.
  */
 export const RevisionWorld = z.object({ spec: ArtifactRef, approved: z.boolean() });
 export type RevisionWorld = z.infer<typeof RevisionWorld>;
@@ -81,7 +81,7 @@ export type RevisionWorld = z.infer<typeof RevisionWorld>;
 export const PlaceRevision = z.object({
   placeId: PlaceId,
   parent: ArtifactHash.nullable(),
-  /** Scene produced by the pipeline (or an empty scene for hand-built places). */
+  /** Scene produced by the pipeline. */
   base: ArtifactRef,
   /** Every edit since `base`, in order. */
   edits: z.array(EditOp).max(LIMITS.edits),

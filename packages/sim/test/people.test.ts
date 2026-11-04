@@ -1,3 +1,4 @@
+/** People coming, going and being taken over, and what stays with them from place to place. */
 import type { ObjectId, PersonDef } from "@aye/schema";
 import { sampleFlat, sampleSettings, sampleSpec } from "@aye/schema/fixtures";
 import { describe, expect, it } from "vitest";
@@ -601,7 +602,7 @@ describe("people arriving, leaving and being taken over", () => {
   it("leaving while away with a thing brings the thing back", () => {
     const sim = new Sim(init);
     sim.step([{ type: "control", agent: "tolu", on: true }]);
-    // Start the generator… then use whatever takes things away in the sample world, if any.
+    // The sample world has nothing to go out with, so this only shows leaving takes nothing away.
     const events = steps(sim, 2, [{ type: "depart", agent: "tolu" }]);
     expect(events.some((e) => e.type === "departed" && e.agent === "tolu")).toBe(true);
     expect(sim.thingAway.every((v) => v === 0)).toBe(true);

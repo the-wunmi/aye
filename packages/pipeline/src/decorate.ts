@@ -39,7 +39,7 @@ import { compileKind, draftOfKind, keyOf } from "./world.ts";
 /** Bump when what decorating sends, accepts or how it places changes. */
 export const DECORATE_VERSION = 2;
 
-/** The most items one pass may add, and the share of kinds it may use. */
+/** The most items one pass may add, and the most new kinds they may make. */
 const MAX_ITEMS = 36;
 const MAX_NEW_KINDS = 14;
 

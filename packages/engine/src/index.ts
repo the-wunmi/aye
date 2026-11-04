@@ -1,3 +1,4 @@
+/** The engine's public surface: the place renderer, city map, figure preview, realm connection. */
 export {
   type CityMap,
   createCityMap,
@@ -16,3 +17,4 @@ export {
   type StateFrame,
   type ThingLayout,
 } from "./renderer.ts";
+export { aimAhead, type Footing } from "./steer.ts";

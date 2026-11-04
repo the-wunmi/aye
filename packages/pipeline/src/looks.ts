@@ -1,8 +1,8 @@
 /**
  * The visual half of the harness: draw what models designed (things, people, buildings,
- * scenery) into numbered contact sheets, show them to a vision model, and turn what it says
- * into findings the authors revise from. Nothing here knows what anything should look like;
- * the critic judges each tile against its own name, and the author fixes it with primitives.
+ * scenery) into numbered contact sheets, show them to a vision model, and have a designer model
+ * redo what's weak (`refineLooks`). Nothing here knows what anything should look like; the
+ * critic judges each tile against its own name, and the designer fixes it with primitives.
  *
  * Sheets and critiques are memoised stages (the sheet's bytes are an input), so a look that
  * hasn't changed is never judged twice.

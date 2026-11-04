@@ -1,8 +1,8 @@
 /**
  * A filmed place should look like itself. A model looks at the redacted frames and says what its
- * floor and walls are and which things are worth painting (things you mostly see one flat side
- * of, like a cabinet); Muse Image then makes, from those same frames, a tiling texture of each
- * surface and a flat, straight-on picture of each of those things. The renderer puts them on the
+ * floor and walls are and which things wouldn't work as a box with a picture on it (rounded, open,
+ * see-through); Muse Image then makes, from those same frames, a tiling texture of each surface
+ * and a flat, straight-on picture of each other thing big enough. The renderer puts them on the
  * room and on simple boxes, and what you walk around in is the place you filmed.
  *
  * Only `RedactedFrameSet` gets here (the types enforce it), so faces and number plates were gone

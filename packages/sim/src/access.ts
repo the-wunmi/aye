@@ -196,7 +196,10 @@ export interface BodyReport {
     thing: number;
     label: string;
     reaches: boolean;
-    /** Why not: "width" (a gap's too narrow), "level" (a step, stairs or slope), "height". */
+    /**
+     * Why not: "width" (a gap's too narrow), "level" (a step, stairs or slope), "both" (only the
+     * two together), "cut_off" (neither would help), "height" (out of reach above them).
+     */
     blockedBy: "width" | "level" | "height" | "both" | "cut_off" | null;
     /** Its bottom above the floor. */
     aboveFloorMm: number;

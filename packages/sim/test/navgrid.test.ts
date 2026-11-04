@@ -1,3 +1,4 @@
+/** The nav grid's step and lip rule, on the sample flat's front door. */
 import { sampleFlat } from "@aye/schema/fixtures";
 import { describe, expect, it } from "vitest";
 import { buildNavGrid, cellAt, entryCells, floodFill } from "../src/index.ts";

@@ -1,3 +1,4 @@
+/** The sim package's public surface: the place sim, city life, physics and the checks on them. */
 export * from "./access.ts";
 export { cityLayoutOf } from "./city-layout.ts";
 export {
@@ -17,6 +18,8 @@ export {
   type WorldEvaluation,
   type WorldFinding,
 } from "./evaluate.ts";
+export * from "./footing.ts";
+export * from "./move-thing.ts";
 export {
   Block,
   buildNavGrid,

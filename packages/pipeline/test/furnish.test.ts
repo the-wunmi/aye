@@ -1,3 +1,7 @@
+/**
+ * Tests for furnishing with a scripted model: choices are checked against the catalog, and only
+ * looks change.
+ */
 import { MemoryArtifactStore, MemoryRecipeIndex } from "@aye/artifacts";
 import { type LibraryCatalog, WorldSpec } from "@aye/schema";
 import { sampleFlat, sampleSpec } from "@aye/schema/fixtures";

@@ -3,9 +3,9 @@
  * never from an HTTP handler). Its notes are model-only: no actor-scoped read returns them,
  * and nothing links them to the world's readable artifacts.
  *
- * A world's city spec is written by more than one job (building, dressing, the director), so
- * the director swaps it in only if it's still the one it read: a turn that raced another
- * write is dropped, never merged over it.
+ * A world's city spec is written by more than one job (building, dressing, the director, a
+ * filmed place joining), so the last two swap it in only if it's still the one they read: a
+ * write that raced another never lands over it.
  */
 import type { ArtifactHash } from "@aye/schema";
 import { and, eq, isNull, sql } from "drizzle-orm";

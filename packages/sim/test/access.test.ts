@@ -1,3 +1,4 @@
+/** What `tryBody` and `tryDay` say a body can do in a place, and with changes tried on it. */
 import { Scene } from "@aye/schema";
 import { sampleFlat, sampleSettings, sampleSpec } from "@aye/schema/fixtures";
 import { describe, expect, it } from "vitest";
@@ -244,7 +245,7 @@ describe("what a body can do in a place", () => {
     expect(r.hours).toBe(24);
     expect(r.did.length).toBeGreaterThan(0);
     expect(r.did[0]?.times).toBeGreaterThanOrEqual(r.did.at(-1)?.times ?? 0);
-    // A body that can barely move does less.
+    // A body too wide for much of the place shouldn't end up doing far more.
     const small = tryDay(sampleFlat, sampleSpec, sampleSettings, { ...wheels, widthMm: 1_200 });
     const total = (d: typeof r) => d.did.reduce((t, x) => t + x.times, 0);
     expect(total(small)).toBeLessThanOrEqual(total(r) * 2);

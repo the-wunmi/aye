@@ -1,7 +1,21 @@
-I want to build Ayé (Yoruba for "world" and "life"): an app that turns short phone videos of your real world (your home, your street, your local spot) into a living, playable life-sim.
+# Ayé
 
-How it will work: each video becomes a place on your map. Muse Spark 1.3 will watch the video and produce a structured scene graph: the layout, every object, and what each object is for (bed → sleep, stove → cook, generator → power when the grid goes off, bus stop → travel). SAM 3.1 will track each object through the video and cut it out with pixel-precise masks, and also remove bystanders and number plates for privacy. Muse Image, anchored to a shared style reference, will redraw every object as a consistent game asset, so your actual sofa, street and neighbourhood buka appear in the game. A needs-and-money simulation will run on top of the scene graph, so characters live by the rules of your real world rather than pre-made assets.
+Ayé (Yoruba for "world" and "life") is a multiplayer life-sim of any city you describe, where you can film a real place on your phone and live in it.
 
-Why it matters: people love life-sims, but every one of them is set in someone else's world. Ayé makes it yours. The same engine can also do real work: in an accessibility mode, a character with limited mobility tries to go about a normal day in your captured home and street, and Ayé highlights likely barriers, such as steps without ramps, stairs, tight gaps and high shelves, so families get a quick first look at what may need changing before an ageing parent or wheelchair user moves in.
+**Every life-sim is set in someone else's world. Ayé makes it yours.**
 
-What makes it new: turning a phone video of a real place into a working, editable simulation. Not a 3D scan you just look at, but a world that functions.
+## How it works
+
+- **Describe a city.** A model designs it from your words: its map, places, people, prices, transport, needs and even the game's interface. Every place is then played by a simulator and sent back to be fixed before it opens.
+- **Film a real place.** Your video becomes a place on the city's map. Faces, number plates, documents and screens are blurred first. A model reads the layout and writes how everything in it works, and your real things are rebuilt in 3D with SAM 3D Objects and swapped in.
+- **Live in it, together.** Make a character, or take over someone the world wrote. Work, spend, pay your bills and talk to people who remember you, in real time with other players.
+- **Make it yours.** Drag your furniture where you want it. Ask a thing to do something new ("can I wash this?") and the world extends itself, for everyone.
+- **Ask it what would happen.** "Could someone in a wheelchair reach the kitchen?" isn't answered by opinion: a simulated body tries it, and the answer says what was tested. In real cities you can close a road and compare the traffic.
+
+## What makes it new
+
+It turns a phone video of a real place into a working simulation you can change and test. It isn't a 3D scan you only look at, but a world that functions.
+
+## Built with Meta's models
+
+Muse Spark writes the worlds and answers questions, Muse Wonder extends them, Muse Image paints real surfaces, SAM 3.1 finds what's private and where things are, SAM 3D Objects rebuilds real things, and Muse Voice Transcribe lets you speak to people in the game. A model never writes code: everything it makes is checked data that a deterministic engine plays.

@@ -26,7 +26,10 @@ export class Rng {
     this.#d = d;
   }
 
-  /** Independent streams from one seed, e.g. one per subsystem, so adding draws in one place never shifts another. */
+  /**
+   * Independent streams from one seed, e.g. one per subsystem, so adding draws in one place never
+   * shifts another.
+   */
   static seeded(seed: number, stream = 0): Rng {
     let s = (seed ^ Math.imul(stream + 1, 0x632be5ab)) | 0;
     const words: number[] = [];

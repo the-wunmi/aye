@@ -1,3 +1,4 @@
+/** `cutOff` reports rooms and things an ordinary body can't get to, by the building alone. */
 import { Scene } from "@aye/schema";
 import { sampleFlat } from "@aye/schema/fixtures";
 import { describe, expect, it } from "vitest";

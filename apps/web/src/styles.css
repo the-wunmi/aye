@@ -1014,7 +1014,7 @@ button.chip[aria-pressed="true"] {
   background: color-mix(in srgb, var(--accent) 20%, var(--surface));
 }
 
-/* Sheets, phone, overlays. */
+/* Sheets, panels, overlays. */
 .sheet {
   position: absolute;
   left: 50%;
@@ -3043,7 +3043,7 @@ button.item:hover {
     gap: 0.4em;
   }
 
-  /* The sticky hover a tap leaves behind means nothing here. */
+  /* A pin's icon is a finger's target too. */
   .pin-icon {
     width: 44px;
     height: 44px;
@@ -3149,4 +3149,76 @@ button.item:hover {
     bottom: 80px;
     max-height: 40dvh;
   }
+}
+
+/* Placing a thing by hand: clear of the phone's bottom bar, and of the person's thumb. */
+.move-bar {
+  position: absolute;
+  z-index: 30;
+  left: 50%;
+  bottom: calc(var(--dock-h, 0px) + 12px);
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  width: min(92vw, 420px);
+  padding: 12px;
+  border-radius: 16px;
+  background: var(--panel, #fff);
+  box-shadow: 0 6px 24px rgb(0 0 0 / 22%);
+}
+.move-hint {
+  font-size: 0.9rem;
+}
+.move-buttons {
+  display: flex;
+  gap: 8px;
+  justify-content: center;
+  width: 100%;
+}
+.move-buttons button {
+  min-height: 44px;
+}
+
+.move-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 64px;
+  min-width: 64px;
+  padding: 0;
+}
+
+.speed-readout {
+  position: absolute;
+  z-index: 40;
+  top: 50%;
+  left: 8px;
+  padding: 4px 8px;
+  border-radius: 6px;
+  background: rgb(0 0 0 / 75%);
+  color: #fff;
+  font:
+    12px ui-monospace,
+    monospace;
+  pointer-events: none;
+}
+
+/* Blurring what's behind a panel means redoing it every frame the world moves under it. */
+@media (pointer: coarse) {
+  * {
+    -webkit-backdrop-filter: none !important;
+    backdrop-filter: none !important;
+  }
+}
+
+.rearrange-open {
+  position: absolute;
+  z-index: 25;
+  right: calc(var(--safe-r, 0px) + 12px);
+  bottom: calc(var(--dock-h, 0px) + 84px);
+  min-height: 44px;
+  padding: 0 14px;
+  font-weight: 600;
 }

@@ -3,10 +3,6 @@
 const formatters = new Map<string, Intl.NumberFormat>();
 const digits = new Map<string, number>();
 
-/**
- * Minor units of `currency` as a short price ("₦5,000", "€12.50"). Amounts of 100 or more are
- * shown whole: nobody reads kobo on a fare.
- */
 /** Part-units are shown in full: £12.90, never £12.9. */
 function withDigits(major: number, currency: string, digitCount: number): string {
   return new Intl.NumberFormat(undefined, {
@@ -26,6 +22,10 @@ export function moneyOwed(minor: number, currency: string): string {
   return money(minor < 10 * unit ? minor : Math.ceil(minor / unit) * unit, currency);
 }
 
+/**
+ * Minor units of `currency` as a short price ("₦5,000", "€12.50"). Amounts of 100 or more are
+ * shown whole: nobody reads kobo on a fare.
+ */
 export function money(minor: number, currency: string): string {
   let f = formatters.get(currency);
   let d = digits.get(currency);

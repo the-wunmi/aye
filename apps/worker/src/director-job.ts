@@ -2,7 +2,7 @@
  * One turn of a world's director: if it's time (every few city hours), within its budget, and
  * nothing else is rewriting the city, read how the city is doing, let the director decide
  * what happens next, and swap the new city in (only if it's still the one read). The world's
- * players pick it up on their next fetch; the realm reads the new events at once.
+ * players pick it up on their next fetch; the realm reads it again before each trip.
  *
  * Trusted job: it acts only on worlds the scheduler hands it, through `system*` functions.
  */
@@ -48,8 +48,8 @@ import { z } from "zod";
 export const DirectorJob = z.strictObject({
   worldId: WorldId,
   /**
-   * A player just arrived in the world: give them something to do now, without waiting for
-   * the next turn (only threads, only for them).
+   * A player with nothing on (just joined, or just finished): give them something now, without
+   * waiting for the next turn (only threads, only for them).
    */
   welcome: z.string().max(64).optional(),
 });
@@ -111,7 +111,6 @@ const ACTIVE_MS = 2 * 24 * 3600 * 1000;
 /** Someone has played within this long, or a turn isn't worth taking. */
 const AROUND_MS = 3600 * 1000;
 
-/** What each built place offers (its actions, on which kind) and who its people are. */
 /** Whether a thing's starting value meets a condition. */
 function startsMeeting(value: number, op: "eq" | "ne" | "gte" | "lte", than: number): boolean {
   if (op === "eq") return value === than;
@@ -119,6 +118,7 @@ function startsMeeting(value: number, op: "eq" | "ne" | "gte" | "lte", than: num
   return op === "gte" ? value >= than : value <= than;
 }
 
+/** What each built place offers (its actions, on which kind) and who its people are. */
 async function catalogOf(
   deps: DirectorJobDeps,
   worldId: string,
@@ -168,11 +168,11 @@ async function catalogOf(
   return out;
 }
 
-/** The players who've been around lately: where they are, their money and needs. */
 /** A need's name in the city's words (keys as read from characters). */
 const needLabel = (city: CitySpec, key: string) =>
   city.needs.find((n) => n.key === key)?.label ?? key;
 
+/** The players who've been around lately: where they are, their money and needs. */
 async function activeOf(
   deps: DirectorJobDeps,
   worldId: string,

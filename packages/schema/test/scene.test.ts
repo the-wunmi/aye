@@ -1,3 +1,4 @@
+/** Scenes, edits and world specs: referential integrity and the bounds on untrusted input. */
 import { describe, expect, it } from "vitest";
 import { sampleFlat, sampleSpec } from "../src/fixtures.ts";
 import {

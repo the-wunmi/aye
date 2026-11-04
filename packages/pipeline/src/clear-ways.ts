@@ -3,8 +3,8 @@
  * can stand a bed across the front door, which makes everything beyond it unreachable. People
  * would never do that, and physics is code's, so after assembly every object
  * that stands in a doorway's approach (a door, an open doorway, a way out) is slid the
- * smallest distance that clears it: along the wall first, else away from it, never out of its
- * own space. Objects that can't be cleared stay where they are (the play-test will say so).
+ * smallest distance that clears it, along the wall or away from it, never out of its own
+ * space. Objects that can't be cleared stay where they are (the play-test will say so).
  *
  * Pure and deterministic: integer millimetres, the sim's integer trig, passages in id order.
  */
@@ -140,7 +140,7 @@ export function clearWays(scene: Scene): { scene: Scene; moved: number } {
       if (!blocked) break;
       const e = extent(corners(o, at), blocked);
       const margin = 50;
-      // Smallest moves first: along the wall either way, then away from it either way.
+      // The smallest move first, whichever way; on a tie, along the wall.
       const moves: [number, Pt][] = [
         [blocked.half - e.a0 + margin, blocked.u],
         [e.a1 + blocked.half + margin, [-blocked.u[0], -blocked.u[1]]],
@@ -197,10 +197,10 @@ const MAX_PASSES = 6;
 /**
  * Furniture can seal off a floor the building leaves open: two things that each leave a gap can
  * together close it, so no one of them is to blame. So code does what anyone moving in would:
- * it finds the way someone would walk if nothing were there, and slides whatever stands on that
- * way the smallest distance that clears it, staying in its own space. It knows nothing about
+ * it finds the way someone would walk if nothing were there, and moves whatever stands on that
+ * way to where it opens up the most floor, staying in its own space. It knows nothing about
  * what any of them is, only where it is and how big. Deterministic: things in id order, and
- * the first smallest slide that works.
+ * of equally good moves, the first tried (the smallest slide).
  */
 export function makeWayThrough(
   scene: Scene,

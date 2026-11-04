@@ -2,8 +2,8 @@
  * Postgres schema (PostGIS for geography). Drizzle table definitions are the source of
  * truth for migrations; JSON columns hold values already validated by @aye/schema.
  *
- * Large immutable content (videos, scenes, sprites) lives in the artifact store; tables hold
- * hashes. `artifact_refs` records which record references which artifact, so the API can
+ * Large immutable content (videos, scenes, specs, pictures) lives in the artifact store; tables
+ * hold hashes. `artifact_refs` records which record references which artifact, so the API can
  * authorise artifact downloads through the records an actor may read — a hash alone is
  * never a capability.
  */
@@ -81,7 +81,7 @@ export const places = pgTable(
       .references(() => users.id, { onDelete: "cascade" }),
     name: text("name").notNull(),
     visibility: text("visibility").$type<Visibility>().notNull().default("private"),
-    /** Stored at the precision the owner chose; further coarsened for everyone else on read. */
+    /** Stored as the owner gave it; others read it coarsened to `geoPrecision`, at most street. */
     geo: geometry("geo", { type: "point", mode: "xy", srid: 4326 }),
     geoPrecision: text("geo_precision").$type<GeoPrecision>().notNull().default("none"),
     bearingDeg: smallint("bearing_deg").notNull().default(0),
@@ -270,7 +270,7 @@ export const worldPlaces = pgTable(
     placeId: text("place_id")
       .notNull()
       .references(() => places.id, { onDelete: "cascade" }),
-    /** Pinned revision: other owners' edits never change your world until you pull. */
+    /** Pinned revision: the place's owner editing it changes nothing here until a job re-pins. */
     revision: hash("revision").notNull(),
   },
   (t) => [
@@ -281,8 +281,8 @@ export const worldPlaces = pgTable(
 
 /**
  * Threads: what each player is in the middle of, written for them by their world's director.
- * A player reads and advances only their own (the realm does it as them); only trusted jobs
- * add them.
+ * A player reads and advances only their own (the realm does it as them). Only trusted jobs add
+ * them, apart from the aim a new character starts with.
  */
 export const threads = pgTable(
   "threads",
@@ -364,9 +364,8 @@ export const chatMessages = pgTable(
 );
 
 /**
- * Authoritative, append-only log of player intents per world. With the deterministic sim,
- * (initial state + this log) reproduces any moment exactly: the basis for saves, replays,
- * multiplayer catch-up and detecting tampered clients.
+ * Append-only log of player intents per world, written through `appendCommand`. Nothing in the
+ * game writes or replays it yet: the realm runs each room's sim live and saves characters.
  */
 export const commandLog = pgTable(
   "command_log",

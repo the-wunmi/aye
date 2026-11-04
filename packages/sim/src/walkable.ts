@@ -7,8 +7,8 @@
  *
  * This is about the building: walls, openings, floors, steps. Before a place has a world nobody
  * has said which things are solid, and guessing from size calls a string of crisp packets a
- * wall, so things don't count here. What things block is judged later, by playing the world,
- * where the model has said what's solid.
+ * wall, so by default things don't count. A caller with a world (moving a thing) passes what it
+ * says is solid; otherwise what things block is judged later, by playing the world.
  */
 import type { Scene } from "@aye/schema";
 import { buildNavGrid, cellCentre, type Mover, pointInPolygon } from "./navgrid.ts";

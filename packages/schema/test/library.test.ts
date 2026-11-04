@@ -1,3 +1,4 @@
+/** The asset library: ids and catalog entries can only ever name files inside it. */
 import { describe, expect, it } from "vitest";
 import { sampleSpec } from "../src/fixtures.ts";
 import { AssetId, LIBRARY_CATALOG, LibraryCatalog, libraryIndex, WorldSpec } from "../src/index.ts";

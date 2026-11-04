@@ -1,3 +1,7 @@
+/**
+ * Building one place with offline models against a real database: from a recording or a
+ * description, with the owner's edits rebased, malformed jobs refused and raw evidence unlinked.
+ */
 import { fileURLToPath } from "node:url";
 import { hashJson, MemoryArtifactStore } from "@aye/artifacts";
 import { canReadArtifact, commitRevision, connect, type Db, getPlace, tables } from "@aye/db";

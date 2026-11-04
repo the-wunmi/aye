@@ -9,8 +9,8 @@ import { z } from "zod";
 import { Degrees } from "./primitives.ts";
 
 /**
- * How much location detail is kept. Homes default to `area` so a shared world never leaks
- * an exact address; only the owner's private copy may hold `exact`.
+ * How much location detail others may see. Owners see what they stored; everyone else sees it
+ * rounded to this, and to at most `street` even for `exact` (`geoForViewer` in @aye/db).
  */
 export const GeoPrecision = z.enum(["exact", "street", "area", "city", "none"]);
 export type GeoPrecision = z.infer<typeof GeoPrecision>;

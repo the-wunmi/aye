@@ -24,13 +24,17 @@ import {
   SpecKey,
   WorldSpec,
 } from "@aye/schema";
+import { moveThings } from "@aye/sim";
 import { z } from "zod";
+import { Moves } from "./move-job.ts";
 
 export const HomeJob = z.strictObject({
   worldId: z.string().max(64),
   userId: z.string().max(64),
   place: SpecKey,
-  request: z.string().min(2).max(300),
+  /** What they said they want, for the model to propose; or, moving things by hand: */
+  request: z.string().min(2).max(300).optional(),
+  moves: Moves.optional(),
   nonce: z.string().min(6).max(32),
 });
 export type HomeJob = z.infer<typeof HomeJob>;
@@ -83,6 +87,26 @@ export async function runHomeJob(
     readJson(deps.store, ref(sceneHash)).then((j) => Scene.parse(j)),
     readJson(deps.store, ref(specHash)).then((j) => WorldSpec.parse(j)),
   ]);
+  if (job.moves) {
+    // By hand: nothing to design and nothing to pay. It's their own furniture.
+    const moved = moveThings(scene, spec, job.moves);
+    if (!moved.ok) return moved;
+    const sceneRef = await deps.store.put(encodeJson(moved.scene), "application/json");
+    await systemRecordArtifacts(deps.db, [sceneRef]);
+    return {
+      ok: true,
+      say: "",
+      place: job.place,
+      price: 0,
+      added: [],
+      moved: moved.moved.map((o) => o.label),
+      removed: [],
+      scene: sceneRef.hash,
+      spec: specHash,
+      base: sceneHash,
+    };
+  }
+  if (!job.request) return { ok: false, reason: "that isn't something that can be done here" };
   const made = await makeYours(scene, spec, job.request, {
     changer: deps.changer,
     store: deps.store,

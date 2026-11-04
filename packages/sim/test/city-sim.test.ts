@@ -1,3 +1,4 @@
+/** City life on sketched roads: the road graph, people's days and the traffic they make. */
 import { describe, expect, it } from "vitest";
 import { buildRoadGraph, type CityLayout, type CityPopulation, CitySim } from "../src/city-sim.ts";
 

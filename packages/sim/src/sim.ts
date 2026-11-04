@@ -6,7 +6,7 @@
  * they hold, and what actions read and change it. This class runs that, on top of physics it
  * does own: space, bodies, walking, reachability.
  *
- * People choose what to do Sims-style: each available action is scored by how much it would
+ * People choose what to do by score: each available action is scored by how much it would
  * help their most urgent needs, discounted by distance. Actions that only change state (take
  * the cover off, open the door, start the generator) are worth what they unlock, found by
  * looking ahead a couple of steps, so someone who wants to drive will uncover the car first.
@@ -87,7 +87,10 @@ export type Command =
   | { type: "mark"; agent: string; mark: string; by: number }
   /** Server only: takes what someone owes, never more than they have. */
   | { type: "charge"; agent: string; amount: number }
-  /** Server only: the place has closed or opened. Its hours are the city's, which the sim can't see. */
+  /**
+   * Server only: the place has closed or opened. Its hours are the city's, which the sim can't
+   * see.
+   */
   | { type: "shut"; on: boolean };
 
 /** How far someone arriving stands from anyone already there: a body's width. */
@@ -143,7 +146,7 @@ export type SimEvent =
       docked?: number;
       /** How it turned out, if it could turn out more than one way. */
       say?: string;
-      /** They practised and nothing came of it this time: worth telling them, or it looks broken. */
+      /** They practised and nothing came of it this time: worth telling them, or it looks off. */
       practiceMissed?: boolean;
     }
   | {
@@ -273,7 +276,7 @@ export class Sim {
   readonly targetThing: Int32Array;
   readonly targetAction: Int32Array;
   readonly actionEnd: Int32Array;
-  /** How much faster than life the current action's effects run, permille (see `heldActionTicks`). */
+  /** How much faster than life the current action's effects run, permille (`heldActionTicks`). */
   readonly actionPace: Int32Array;
   readonly nextThink: Int32Array;
   readonly stepProgress: Int32Array;
@@ -326,7 +329,6 @@ export class Sim {
     const needIndex = new Map(this.needKeys.map((k, i) => [k, i]));
     const resourceIndex = new Map(this.resourceKeys.map((k, i) => [k, i]));
 
-    // Compile kinds and actions to integer tables.
     this.actions = [];
     this.kinds = spec.kinds.map((k) => {
       const varIndex = new Map(k.vars.map((v, i) => [v.key, i]));
@@ -831,7 +833,10 @@ export class Sim {
     return events;
   }
 
-  /** FNV-1a over all mutable state. Equal hashes on client and server ⇒ same simulation. */
+  /**
+   * FNV-1a over the mutable state, bar `paths` and `speed`. Equal hashes ⇒ same simulation. Only
+   * tests compare them; the realm server is the one copy that runs.
+   */
   hash(): string {
     let h = 0x811c9dc5;
     const mix = (v: number) => {
@@ -1040,8 +1045,9 @@ export class Sim {
   #applyCommands(commands: readonly Command[], events: SimEvent[]): void {
     const reject = (agent: string | null, reason: RejectReason) =>
       events.push({ type: "command_rejected", tick: this.tick, agent, reason });
-    // What the server owes or is owed settles while they're still here, then leaving, then arrivals in key order, then everything else in slot order: a total
-    // order, so the same commands in any order give the same result.
+    // What the server owes or is owed settles while they're still here, then leaving, then arrivals
+    // in key order, then everything else in slot order. Commands that tie (two for one person) keep
+    // the order they came in, which is the command log's.
     const rank = (c: Command) =>
       c.type === "shut" || c.type === "charge" || c.type === "grant" || c.type === "mark"
         ? 0
@@ -1228,8 +1234,12 @@ export class Sim {
       reject(agent, "unreachable");
       return;
     }
+    // Steering is a stream of these: losing the step under way each time would make a held key
+    // walk slower and stutter than one long walk.
+    const stride = this.mode[i] === Mode.Walking ? (this.stepProgress[i] as number) : 0;
     this.#stop(i, events, "cancelled");
     this.#beginWalk(i, -1, -1, path);
+    this.stepProgress[i] = stride;
   }
 
   // ── Choosing what to do ───────────────────────────────────────────────────────────
@@ -1457,7 +1467,6 @@ export class Sim {
     for (let j = 0; j < MAX_PEOPLE; j++) {
       if (j === i || !this.present[j]) continue;
       const m = this.mode[j];
-      // Anyone standing or busy here, and anyone on their way somewhere (where they'll stand).
       if (m === Mode.Acting || m === Mode.Idle) others.push(this.cell[j] as number);
       else if (m === Mode.Walking) {
         const path = this.paths[j] as number[];
@@ -1582,7 +1591,6 @@ export class Sim {
     this.paths[i] = null;
     const t = this.targetThing[i] as number;
     if (t < 0) {
-      // A walk to a point: arrived.
       this.#idle(i);
       return;
     }

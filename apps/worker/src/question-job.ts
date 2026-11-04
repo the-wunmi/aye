@@ -1,7 +1,7 @@
 /**
  * Someone asks the world about a place ("could my mum get around here in a wheelchair?"): this
  * reads the place as it is now and hands it to the agent, which tests it and answers. Trusted
- * job: the API has checked the asker can see this place. The answer is for them alone: the job's
+ * job: the API has checked the asker plays in this world. The answer is for them alone: the job's
  * id names them.
  */
 import type { ArtifactStore, RecipeIndex } from "@aye/artifacts";

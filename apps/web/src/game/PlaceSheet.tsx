@@ -34,6 +34,7 @@ export function PlaceSheet({
   onDrive,
   onEnter,
   onClose,
+  onRemove,
 }: {
   city: CitySpec;
   /** How fast trips go compared with life, permille (`tripPacePermille`). */
@@ -60,6 +61,8 @@ export function PlaceSheet({
   onDrive(): void;
   onEnter(): void;
   onClose(): void;
+  /** Yours to take away, if it is: a filmed place, with its video. */
+  onRemove?: () => void;
 }) {
   const place = placesOf(city).find((p) => p.key === placeKey);
   if (!place) return null;
@@ -109,6 +112,11 @@ export function PlaceSheet({
           <span aria-hidden>{"\u{27A1}\u{FE0F}"}</span> Pick how to get there, then:{" "}
           <strong>{then}</strong>
         </p>
+      )}
+      {onRemove && (
+        <button type="button" className="link danger" onClick={onRemove}>
+          Delete this place and its video
+        </button>
       )}
       {place.tags.length > 0 && (
         <div className="w-chips">

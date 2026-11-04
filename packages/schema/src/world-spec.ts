@@ -124,7 +124,6 @@ export const MarkDef = z.object({
 });
 export type MarkDef = z.infer<typeof MarkDef>;
 
-/** The mark for how close someone is to a person of a place. */
 /**
  * Only its owner can do it: taking out a thing that isn't for hire, when every one of them here
  * belongs to someone. A newcomer shouldn't be pointed at it.
@@ -158,6 +157,7 @@ export function carryAsked(own: WorldSpec, from: WorldSpec): WorldSpec {
   return specIssues(merged).length === 0 ? merged : own;
 }
 
+/** The mark for how close someone is to a person of a place. */
 export function closenessKey(personKey: string): string {
   return `close_${personKey}`.slice(0, 32).replace(/_+$/, "");
 }
@@ -195,12 +195,6 @@ export const Condition = z.union([
 ]);
 export type Condition = z.infer<typeof Condition>;
 
-/**
- * One primitive of a kind's look, in the thing's own frame and relative to its size, so one
- * kind fits every instance: x and z in permille of width and depth around the centre, y in
- * permille of height up from the floor; sizes in permille of the thing's size. Drawn only
- * while every `when` condition holds (a cover only while `covered`).
- */
 /**
  * The primitives every look is built from: geometry only, never what anything is. A model
  * composes them into a danfo, a church, a person; code just draws them.
@@ -386,11 +380,16 @@ export const ThingDef = z.object({
   owner: SpecKey.optional(),
   /**
    * A picture of the real thing's front (for a filmed place): drawn as a box wearing it. An
-   * artifact, readable by whoever can read the place. Never a URL a model wrote.
+   * artifact, readable by the members of its city. Never a URL a model wrote.
    */
   front: ArtifactHash.optional(),
   /** A picture of its top, where that's what you see of it (a worktop). */
   top: ArtifactHash.optional(),
+  /**
+   * A 3D model rebuilt from the real thing (for a filmed place), drawn in its measured box in
+   * place of any other look. An artifact our own checks passed, never a URL a model wrote.
+   */
+  mesh: ArtifactHash.optional(),
 });
 export type ThingDef = z.infer<typeof ThingDef>;
 

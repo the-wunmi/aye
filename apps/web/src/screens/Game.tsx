@@ -42,6 +42,8 @@ type AskStatus =
       result: { ok: true; thing: string; added: string[] } | { ok: false; reason: string };
     };
 
+/** How many times to look for a moved thing, half a second apart. */
+const MOVE_POLLS = 60;
 /** How many times to look for an answer, 3 s apart: well past the worst any ask has taken. */
 const ASK_POLLS = 400;
 
@@ -53,8 +55,6 @@ const seenTour = (worldId: string) => {
     return false;
   }
 };
-
-/** How many days ahead a bill starts showing. */
 
 export function Game({
   worldId,
@@ -195,10 +195,55 @@ export function Game({
       ? state.snap.doing[slot] || (state.snap.modes[slot] === 1 ? city.words.walking : "")
       : "";
 
+  /** Take away a filmed place, once they've said they mean it. It can't be undone. */
+  const removePlace = async (key: string) => {
+    const name = placesOf(city).find((p) => p.key === key)?.name ?? "this place";
+    const sure = window.confirm(
+      `Delete ${name} and its video for everyone? Anyone in it goes home. This can't be undone.`,
+    );
+    if (!sure) return;
+    const say = (text: string) => setTold({ id: Date.now(), text });
+    try {
+      const { job } = await api<{ job: string }>(
+        `/worlds/${worldId}/places/${encodeURIComponent(key)}`,
+        {},
+        "DELETE",
+      );
+      for (let i = 0; i < MOVE_POLLS * 4; i++) {
+        await new Promise((r) => setTimeout(r, 500));
+        const s = await api<
+          | { status: "working" }
+          | { status: "done"; result: { ok: true } | { ok: false; reason: string } }
+        >(`/removals/${job}`);
+        if (s.status !== "done") continue;
+        if (!s.result.ok) {
+          say(s.result.reason);
+          return;
+        }
+        setSheet(null);
+        say(`${name} and its video are gone.`);
+        setBundle(await api<CityBundle>(`/worlds/${worldId}/city`));
+        return;
+      }
+      say("That's taking too long. It may still finish.");
+    } catch {
+      say("That didn't work. Try again.");
+    }
+  };
+
+  /** Moves made and not saved: leaving loses them, so it asks first. */
+  const unsavedMoves = useRef(false);
+  const setUnsavedMoves = useCallback((any: boolean) => {
+    unsavedMoves.current = any;
+  }, []);
+  const okToLeave = () =>
+    !unsavedMoves.current || window.confirm("Leave without saving what you've moved?");
+
   const intent = useCallback(
     (it: Intent) => {
       switch (it.do) {
         case "map":
+          if (!okToLeave()) return;
           setView("map");
           return;
         case "panel":
@@ -336,7 +381,7 @@ export function Game({
     return [now.feeling, ...costs].join(" \u{00B7} ");
   })();
 
-  /** The best thing about a need: free or cheapest first, somewhere you can go, here if it can be. */
+  /** What helps a need most, of what you can get to and pay for; here, unless that barely helps. */
   const bestFor = (need: string) =>
     bestForNeed(
       need,
@@ -352,7 +397,7 @@ export function Game({
       wallet,
     );
 
-  // A need running out shouldn't leave anyone wondering where to go: say the nearest answer.
+  // A need running out shouldn't leave anyone wondering where to go: say the best answer.
   const seenEmpty = useRef<ReadonlySet<string> | null>(null);
   useEffect(() => {
     if (needs.length === 0) return;
@@ -436,6 +481,43 @@ export function Game({
       doHere(pending);
     }
   }, [pending, placeKey, snapReady, doHere]);
+  /** Save a rearrangement: the server decides, and the place comes back changed. */
+  const moveThings = async (
+    moves: { object: string; xMm: number; zMm: number; yawDeg: number }[],
+  ): Promise<boolean> => {
+    if (!state.place) return false;
+    const say = (text: string) => setTold({ id: Date.now(), text });
+    try {
+      const { job, home: isHome } = await api<{ job: string; home: boolean }>(
+        `/worlds/${worldId}/places/${state.place.key}/move`,
+        { moves },
+      );
+      for (let i = 0; i < MOVE_POLLS; i++) {
+        await new Promise((r) => setTimeout(r, 500));
+        const s = await api<
+          | { status: "working" }
+          | { status: "done"; result: { ok: true } | { ok: false; reason: string } }
+        >(isHome ? `/homes/${job}` : `/moves/${job}`);
+        if (s.status !== "done") continue;
+        if (!s.result.ok) {
+          say(s.result.reason);
+          return false;
+        }
+        // Your own home is your own copy, and it's the room you're in that takes it.
+        if (isHome) send({ t: "buy_home", job });
+        return true;
+      }
+      say("That's taking too long. Try again.");
+    } catch (err) {
+      say(
+        err instanceof ApiError && err.code === "rate_limited"
+          ? "You've moved a lot of things just now. Give it a minute."
+          : "That didn't save. Try again.",
+      );
+    }
+    return false;
+  };
+
   /** Ask the world to let a thing do something new; the place updates for everyone. */
   const ask = async (object: string, request: string) => {
     if (!state.place) return;
@@ -675,6 +757,10 @@ export function Game({
           marks={marks}
           closenessOf={closenessOf}
           onAsk={(object, request) => void ask(object, request)}
+          canMove={home === state.place.key || (bundle.yours ?? []).includes(state.place.key)}
+          ownCopy={home === state.place.key}
+          onUnsavedMoves={setUnsavedMoves}
+          onMove={moveThings}
           onPanel={(key) => setPanel({ key, app: null })}
           panelLabel={(key) => panels.find((p) => p.key === key) ?? null}
           onBackend={setBackend}
@@ -714,7 +800,9 @@ export function Game({
             <button
               type="button"
               className="sys-pill"
-              onClick={onLeave}
+              onClick={() => {
+                if (okToLeave()) onLeave();
+              }}
               title={backend ? `Drawn with ${backend === "webgpu" ? "WebGPU" : "WebGL2"}` : ""}
             >
               ‹ Cities
@@ -813,6 +901,9 @@ export function Game({
 
       {sheet && view === "map" && (
         <PlaceSheet
+          {...(sheet && (bundle.removable ?? []).includes(sheet)
+            ? { onRemove: () => void removePlace(sheet) }
+            : {})}
           marks={city.marks}
           {...(lastMarks.current ? { have: lastMarks.current } : {})}
           earnedBy={(mark) => {

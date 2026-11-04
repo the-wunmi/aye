@@ -66,7 +66,10 @@ export const CompileJob = z.strictObject({
 });
 export type CompileJob = z.infer<typeof CompileJob>;
 
-/** How worlds are play-tested before they are offered: the defaults new worlds get. */
+/**
+ * How worlds are play-tested before they are offered: the grid, clock speed and time limits new
+ * worlds get, from a fixed seed and an early start.
+ */
 export const EVAL_SETTINGS: WorldSettings = {
   seed: 1,
   gridCellMm: 100,
@@ -105,7 +108,6 @@ export async function runCompileJob(
   const step = deps.step ?? directStep;
   const index = new PgRecipeIndex(deps.db);
 
-  // Whose place this is, and where the layout comes from.
   const target = await step("load", async () => {
     if (job.source.kind === "description") {
       const owner = await systemGetPlaceOwner(deps.db, job.source.placeId);
@@ -257,7 +259,7 @@ export async function runCompileJob(
     return { revision: revision.hash };
   } catch (error) {
     if (capture && runId) {
-      // Store a bounded, non-sensitive message; full detail goes to logs.
+      // Store a bounded message; the error itself is rethrown for DBOS to record.
       const message = error instanceof Error ? error.message.slice(0, 2000) : "unknown error";
       await step("fail", async () => {
         await systemRecordRun(deps.db, {

@@ -21,12 +21,12 @@ export const WorldPlace = z.object({
 });
 export type WorldPlace = z.infer<typeof WorldPlace>;
 
-/** How a world's simulation runs. What happens in it comes from its specs. */
 /** The default longest someone being played spends on themselves, real seconds. */
 export const ACTION_MAX_REAL_SEC = 60;
 /** What the realm plays needs filling at: enough that upkeep leaves most of a day for living. */
 export const NEED_FILL_PERMILLE = 3000;
 
+/** How a world's simulation runs. What happens in it comes from its specs. */
 export const WorldSettings = z.object({
   /** Seed for every random draw in this world's simulation. */
   seed: z.int().nonnegative(),

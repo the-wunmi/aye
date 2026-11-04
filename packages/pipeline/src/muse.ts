@@ -74,10 +74,10 @@ export const MuseEnv = z.object({
 });
 export type MuseEnv = z.infer<typeof MuseEnv>;
 
-/** Parse Muse settings, reporting bad keys by name only. */
 /** Writing a whole world can take over five minutes; giving up sooner throws that work away. */
 const DEFAULT_TIMEOUT_MS = 600_000;
 
+/** Parse Muse settings, reporting bad keys by name only. */
 export function museConfigFrom(env: Record<string, string | undefined>): MuseConfig {
   const parsed = MuseEnv.safeParse(env);
   if (!parsed.success) {
@@ -326,7 +326,7 @@ export function museWorldAuthor(cfg: MuseConfig, opts: { sketch?: boolean } = {}
 
 const CITY_PROMPT = `You are the lead designer of Ayé, a multiplayer life-simulation game played in the browser, where every city is designed by you from someone's words. Players create a character, wake up in a home, and live: work, eat, rest, spend, travel between places, and meet other players. You design the whole city AND its game interface. Code renders exactly what you write, from a fixed set of parts, so be complete and consistent.
 
-Design it like a hit mobile life-sim made by people who know the place intimately: warm, specific, funny where it fits, true to how life works there (the money, the transport, the food, the way people talk, in names and headlines).
+Design it as people who know the place intimately would: warm, specific, funny where it fits, true to how life works there (the money, the transport, the food, the way people talk, in names and headlines).
 
 Write everything players read in the language of the words you were given, even if the place speaks another: an English description makes an English game, seasoned with local words, names and food. Use another language only if they wrote in it.
 

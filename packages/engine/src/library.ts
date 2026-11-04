@@ -26,7 +26,7 @@ export interface Library {
   thing(id: string): Promise<THREE.Object3D | null>;
   /** A fresh, rigged copy of an outfit with the shared clips, or null. */
   outfit(id: string): Promise<Outfit | null>;
-  /** A surface's colour map, set to repeat every `tileMm`, or null. */
+  /** A surface's colour map, set to repeat, and how far one repeat covers, or null. */
   surface(id: string): Promise<{ map: THREE.Texture; tileM: number; tintable: boolean } | null>;
 }
 

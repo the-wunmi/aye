@@ -1,5 +1,6 @@
 /**
- * Actor-scoped data access. The only way application code reads or writes user data.
+ * Actor-scoped access to places, captures and artifacts. With worlds.ts and threads.ts, the only
+ * way application code reads or writes user data.
  *
  * Every function takes the Actor and puts the authorisation rule into the SQL predicate, so
  * a row the actor may not see is never loaded — there is no "fetch by id, then check" path
@@ -466,8 +467,8 @@ export async function roleIn(
 }
 
 /**
- * Append a validated intent to a world's authoritative log. Players and up only. The sim
- * re-validates the intent when it runs; this log is what servers replay.
+ * Append an intent to a world's log. Players and up only. No game code calls this yet, and
+ * nothing replays the log (see `commandLog`).
  */
 export async function appendCommand(
   db: Db,

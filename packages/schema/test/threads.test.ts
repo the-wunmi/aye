@@ -1,3 +1,4 @@
+/** Threads: how steps are checked and advanced, when they're paid, and what rides on them. */
 import { describe, expect, it } from "vitest";
 import {
   advance,

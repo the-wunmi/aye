@@ -3,8 +3,8 @@
  *
  *   1. quick   the city sketched (map, places, travel, starts, interface) with low effort and no
  *              more revising than it takes to have nothing broken; then the homes and the public
- *              place nearest them, each laid out and given a world the same quick way. The world
- *              opens as soon as one home and one public place stand.
+ *              place nearest them, each laid out and given a world the same quick way. Then the
+ *              world opens, if at least one home and one public place stand.
  *   2. fill    every other place, the same quick way, all at once (a few in parallel); each
  *              appears on the map as it lands.
  *   3. dress   the city's looks, then each place's, through the visual loop (dressing); each
@@ -12,8 +12,8 @@
  *
  * Furnishing rides along: the city's outfits are chosen with its sketch, each
  * place's library models with its world, and dressing furnishes anything still bare (places
- * built before the library). It only ever changes looks, and never blocks a build: if it
- * fails, the place is drawn from its primitives.
+ * built before the library). It only adds looks and set dressing, and never blocks a build: if
+ * it fails, the place is drawn from its primitives.
  *
  * Durable like the place job (compile-job.ts): every step is checkpointed, steps return small
  * JSON, and model calls are memoised by recipe, so a crash resumes where it stopped and a

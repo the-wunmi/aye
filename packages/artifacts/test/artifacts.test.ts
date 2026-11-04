@@ -1,3 +1,4 @@
+/** Canonical JSON, ids, recipe hashes and the stores: what content addressing rests on. */
 import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";

@@ -61,7 +61,7 @@ export const Timestamp = z.iso.datetime({ offset: true });
 export const Vec2 = z.tuple([Millimetres, Millimetres]);
 /** World-space point `[x, y, z]` in millimetres; y is up. */
 export const Vec3 = z.tuple([Millimetres, Millimetres, Millimetres]);
-/** Simple polygon on the floor plane, counter-clockwise, without a repeated closing vertex. */
+/** Simple polygon on the floor plane, without a repeated closing vertex. */
 export const Polygon = z.array(Vec2).min(3).max(LIMITS.polygonVertices);
 
 /** Axis-aligned extents in the object's local frame: width (x), depth (z), height (y). */
@@ -80,10 +80,7 @@ export const Transform = z.object({
   yawDeg: Degrees,
 });
 
-/**
- * Lowercase dotted identifier for catalog data, e.g. `core.bed` or `ng.buka_counter`.
- * The first segment is the namespace of the catalog pack that defines it.
- */
+/** Lowercase dotted identifier. Nothing uses it: a leftover from an earlier design. */
 export const CatalogKey = z
   .string()
   .max(64)

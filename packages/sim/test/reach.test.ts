@@ -1,3 +1,4 @@
+/** Where a thing is used from: floor within reach, on its side of any wall, beside it not in it. */
 import { type Scene, Scene as SceneSchema } from "@aye/schema";
 import { sampleFlat } from "@aye/schema/fixtures";
 import { describe, expect, it } from "vitest";
@@ -5,7 +6,7 @@ import { buildNavGrid, cellAt, Flag, objectUseCells } from "../src/index.ts";
 
 const levelId = sampleFlat.levels[0]!.id;
 
-/** The sample flat, plus a counter and something standing on it. */
+/** The sample flat, plus something small standing in the fridge's footprint, as on a counter. */
 function withCounter(): { scene: Scene; bottle: Scene["objects"][number] } {
   const fridge = sampleFlat.objects.find((o) => o.id === "obj_fridge")!;
   const bottle = {

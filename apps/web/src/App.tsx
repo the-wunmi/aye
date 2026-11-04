@@ -70,7 +70,6 @@ export function App() {
     document.title = inCity ? `${screen.bundle.city.name} · Ayé` : "Ayé";
   }, [screen]);
 
-  // Entering a city: load it, then your character (or make one).
   useEffect(() => {
     if (screen.at !== "entering") return;
     const { handle, world } = screen;

@@ -1,3 +1,4 @@
+/** Placement physics: what walls, solid things and door widths allow an edit to do. */
 import type { ObjectId, Scene } from "@aye/schema";
 import { sampleFlat, sampleSpec } from "@aye/schema/fixtures";
 import { describe, expect, it } from "vitest";

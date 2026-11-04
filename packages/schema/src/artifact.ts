@@ -1,7 +1,7 @@
 /**
  * Content-addressed artifacts and the recipes that produce them.
  *
- * Every blob Ayé stores (videos, masks, sprites, scene JSON, model responses) is addressed
+ * Every blob Ayé stores (videos, masks, pictures, scene JSON, specs) is addressed
  * by the BLAKE3 hash of its bytes. Every *generated* artifact also records the Recipe that
  * produced it, and the recipe's own hash is the cache key: identical recipe ⇒ identical
  * artifact, without calling the model again. This is what makes AI output reproducible.

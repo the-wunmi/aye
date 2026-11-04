@@ -1,3 +1,7 @@
+/**
+ * Tests for asking the world a question: what the scripted agent tries is measured by code, and
+ * what it says is checked.
+ */
 import { hashJson, MemoryArtifactStore, MemoryRecipeIndex } from "@aye/artifacts";
 import { sampleFlat, sampleSettings, sampleSpec } from "@aye/schema/fixtures";
 import { describe, expect, it } from "vitest";
