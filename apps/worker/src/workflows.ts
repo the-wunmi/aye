@@ -119,7 +119,8 @@ export function registerCityWorkflow(
         ? run(finishProviders)
         : traffic.foreground(() => run(rest.providers));
     },
-    { name: CITY_WORKFLOW, inputSchema: z.tuple([CityJob]), maxRecoveryAttempts: attempts(5) },
+    // Finishing a city takes an hour, so deploys land in the middle of it, and each one counts.
+    { name: CITY_WORKFLOW, inputSchema: z.tuple([CityJob]), maxRecoveryAttempts: attempts(40) },
   );
   return workflow;
 }

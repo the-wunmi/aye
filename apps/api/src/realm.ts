@@ -580,6 +580,8 @@ export class Realm {
   }
 
   #heard(room: Room, from: string, text: string): void {
+    // Anyone talking keeps the place from starting a conversation of its own over them.
+    room.lastTalk = this.#deps.now();
     room.recent.push({ from, text });
     if (room.recent.length > 8) room.recent.shift();
   }

@@ -26,6 +26,7 @@ import {
   places,
   recipes,
   worldPlaces,
+  worlds,
 } from "./schema.ts";
 
 export async function systemGetCapture(db: Db, captureId: string) {
@@ -179,6 +180,20 @@ export async function systemArtifactStillUsed(
       select 1 from jsonb_each(r.record->'outputs') o where o.value->>'hash' = ${hash})`,
   );
   return (makers as unknown as { recipe_hash: string }[]).some((m) => !leaving.has(m.recipe_hash));
+}
+
+/** What every remaining place and city is built from, for checking what they use inside them. */
+export async function systemLiveArtifacts(db: Db): Promise<string[]> {
+  const revisions = await db
+    .select({ scene: placeRevisions.scene, spec: placeRevisions.worldSpec })
+    .from(placeRevisions);
+  const cities = await db.select({ city: worlds.city }).from(worlds);
+  return [
+    ...new Set([
+      ...revisions.flatMap((r) => [r.scene as string, ...(r.spec ? [r.spec as string] : [])]),
+      ...cities.flatMap((c) => (c.city ? [c.city as string] : [])),
+    ]),
+  ];
 }
 
 /** The place, its pin, its capture, its revisions and what was said in it. */

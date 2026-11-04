@@ -21,6 +21,7 @@ import {
   systemGetCapture,
   systemGetWorld,
   systemRecipesTaking,
+  systemRecordArtifacts,
   systemSetWorld,
 } from "@aye/db";
 import type { CityJoiner, ObjectReconstructor, Painter, ReconstructPlanner } from "@aye/pipeline";
@@ -444,6 +445,45 @@ describe.skipIf(!url)("filming a place into a city", () => {
       ),
     ).toMatchObject({ ok: true });
     expect(await getPinnedPlace(db, owner, world, key)).toBeNull();
+  });
+
+  it("keeps what another place still uses, even when it's only named inside it", async () => {
+    const filmed = await film("a video whose picture another place shares");
+    const r = await runCaptureJob(
+      { worldId: world, captureId: filmed.id, note: "", at: [44, 44] },
+      deps(),
+    );
+    const key = r?.placeKey as string;
+    const made = await systemRecipesTaking(db, filmed.video.hash);
+    const frames = made.flatMap((x) => x.jsonOutputs)[0] as ArtifactHash;
+    // The live city names something made from this video, inside itself.
+    const before = await systemGetWorld(db, world);
+    const city = JSON.parse(
+      new TextDecoder().decode((await store.get(before?.city as ArtifactHash)) as Uint8Array),
+    );
+    const sharing = await store.put(encodeJson({ ...city, tagline: frames }), "application/json");
+    await systemRecordArtifacts(db, [sharing]);
+    await systemSetWorld(db, world, { city: sharing.hash });
+    const result = await runRemoveJob(
+      { worldId: world, place: key, userId: player.userId, nonce: "abcdef06" },
+      { db, store },
+    );
+    expect(result).toMatchObject({ ok: true });
+    // The place and its video are gone; what the city still names isn't.
+    expect(await getPinnedPlace(db, other, world, key)).toBeNull();
+    expect(await store.has(filmed.video.hash)).toBe(false);
+    expect(await store.has(frames)).toBe(true);
+    // Put the city back as it was for whatever comes next.
+    const after = await systemGetWorld(db, world);
+    const left = JSON.parse(
+      new TextDecoder().decode((await store.get(after?.city as ArtifactHash)) as Uint8Array),
+    );
+    const restored = await store.put(
+      encodeJson({ ...left, tagline: city.tagline }),
+      "application/json",
+    );
+    await systemRecordArtifacts(db, [restored]);
+    await systemSetWorld(db, world, { city: restored.hash });
   });
 
   it("leaves a video alone if someone else filmed the same bytes", async () => {

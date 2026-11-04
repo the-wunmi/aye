@@ -18,6 +18,7 @@ import {
   systemForgetArtifacts,
   systemGetWorld,
   systemLinkWorldArtifacts,
+  systemLiveArtifacts,
   systemRecipesTaking,
   systemRecordArtifacts,
   systemRemovePlace,
@@ -164,9 +165,22 @@ export async function runRemoveJob(
   for (const h of filmed.revisionArtifacts) hashes.add(h);
   await systemRemovePlace(db, job.worldId, job.place, filmed.placeId);
 
+  // Everything still in use anywhere stays, including what's only named inside something else: two
+  // places can share a picture or a layout, and only one of them is going.
+  const inUse = new Set<string>();
+  for (const live of await systemLiveArtifacts(db)) {
+    inUse.add(live);
+    const bytes = await store.get(live as ArtifactHash);
+    if (!bytes) continue;
+    try {
+      hashesIn(JSON.parse(new TextDecoder().decode(bytes)), inUse);
+    } catch {
+      // Not JSON: it's only itself.
+    }
+  }
   const gone: string[] = [];
   for (const h of hashes) {
-    if (!(await systemArtifactStillUsed(db, h, recipes))) gone.push(h);
+    if (!inUse.has(h) && !(await systemArtifactStillUsed(db, h, recipes))) gone.push(h);
   }
   await systemForgetArtifacts(db, gone, recipes);
   for (const h of gone) await store.delete(h as ArtifactHash);
