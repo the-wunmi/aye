@@ -154,7 +154,9 @@ Frame sampling and redaction run on our infrastructure. Segmentation (SAM 3.1, h
 one call that sees unredacted keyframes, because finding faces and number plates is its job
 (ADR 0012); never send it more than the sampled keyframes. Everything after it (`Understander`,
 anything a player sees) only accepts `RedactedFrameSet` (enforced by the types),
-and private tracks (faces, plates, documents, screens) never become scene objects.
+and private tracks (faces, plates, documents, screens) never become scene objects. Rebuilding a
+filmed thing in 3D (ADR 0023) sends only redacted frames, to whichever reconstructor is
+configured, and its output is checked as untrusted bytes before anyone can load it.
 
 ### 6. Bounded everything
 
@@ -163,7 +165,7 @@ schemas must too. Request bodies, queues, sim ticks per wake and command queues 
 
 ## Security checklist for every change
 
-- Model API keys (`MUSE_API_KEY`) are server-side only: worker and dev scripts, never the
+- Model API keys (`MUSE_API_KEY`, `FAL_KEY`, `MODAL_RECONSTRUCT_TOKEN`) are server-side only: worker and dev scripts, never the
   browser bundle or any response. Errors from model APIs carry status and error type only.
 - No secrets in code, config, fixtures or logs. Config comes from env, validated with Zod at
   boot (`apps/api/src/env.ts`). Error messages name bad keys, never values.
