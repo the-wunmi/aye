@@ -129,6 +129,8 @@ describe.skipIf(!url)("city build job", () => {
     expect(openAt.get("dress-city")).toBe(true);
     expect(result).toMatchObject({ status: "ready", missing: [] });
     const detail = await getWorld(db, alice, world);
+    // Someone waiting read what the model wrote, and code only chose how far along to show.
+    expect(sampleCity.buildingLines).toContain(detail?.buildNote);
     expect(detail?.status).toBe("ready");
     expect(detail?.name).toBe("Testville");
     expect(detail?.places.map((p) => p.key).sort()).toEqual(

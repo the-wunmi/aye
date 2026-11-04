@@ -166,15 +166,19 @@ export function Hud({
   layout,
   ctx,
   extras = {},
+  toolsOpen = false,
 }: {
   layout: Layout;
   ctx: HudContext;
   /** The game's own controls, placed after the model's widgets in a region. */
   extras?: Partial<Record<HudRegion, ReactNode>>;
+  /** On a phone those controls live in a sheet: start with it open, for one already in use. */
+  toolsOpen?: boolean;
 }) {
   const regions = arrange(layout);
   const compact = useCompact();
-  if (compact) return <PhoneHud regions={regions} ctx={ctx} extras={extras} />;
+  if (compact)
+    return <PhoneHud regions={regions} ctx={ctx} extras={extras} toolsOpen={toolsOpen} />;
   return (
     <section className="hud" aria-label="Game interface">
       {REGIONS.map((region) => {
@@ -383,12 +387,14 @@ function PhoneHud({
   regions,
   ctx,
   extras,
+  toolsOpen,
 }: {
   regions: ReadonlyMap<HudRegion, readonly Widget[]>;
   ctx: HudContext;
   extras: Partial<Record<HudRegion, ReactNode>>;
+  toolsOpen: boolean;
 }) {
-  const [sheet, setSheet] = useState<PhoneSheetKey | null>(null);
+  const [sheet, setSheet] = useState<PhoneSheetKey | null>(toolsOpen ? "tools" : null);
   const fold = compactHud(regions);
   useKeyboardInset();
 

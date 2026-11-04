@@ -217,7 +217,7 @@ schemas must too. Request bodies, queues, sim ticks per wake and command queues 
   are in the recipes, so worlds regenerate), the draft contract in `pipeline/src/contracts.ts`
   or `compileWorld` (bump `WORLD_COMPILER_VERSION`), or balance limits in `WORLD_BOUNDS`. Then
   run the live evals (`set -a; . ./.env; set +a; pnpm --filter @aye/pipeline test`) and
-  build a city in the app (`pnpm dev`, then "Make a city") to play the results.
+  build a city in the app (`pnpm dev`, then describe one on the home screen) to play the results.
 - **Let worlds express something new** (a new kind of effect or condition): add it to
   `WorldSpec` with bounds and `specIssues` checks, to `WorldDraft` and `compileKind`, to the
   interpreter in `sim/src/sim.ts` (into `hash()` if it is state), to `staticFindings` if it

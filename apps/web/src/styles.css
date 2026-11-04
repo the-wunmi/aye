@@ -1508,7 +1508,7 @@ button.item:hover {
 
 .cam-controls button[aria-pressed="true"] {
   background: var(--accent);
-  color: var(--on-accent, #fff);
+  color: var(--onAccent, #fff);
 }
 
 .outfit-picker {
@@ -3221,4 +3221,290 @@ button.item:hover {
   min-height: 44px;
   padding: 0 14px;
   font-weight: 600;
+}
+
+/* With room to spare, it sits beside the needs and the map button, not on top of them. */
+@media (min-width: 721px) and (min-height: 501px) {
+  .rearrange-open {
+    right: calc(var(--safe-r, 0px) + 285px);
+    bottom: 20px;
+  }
+}
+
+/* A sheet that's open has the screen: nothing else pokes through it. */
+.game:has(.ph-sheet.on) .rearrange-open {
+  display: none;
+}
+
+.build-done {
+  position: fixed;
+  z-index: 60;
+  top: calc(var(--safe-t) + 12px);
+  left: 50%;
+  transform: translateX(-50%);
+  width: min(460px, calc(100vw - 24px));
+  display: flex;
+  align-items: center;
+  gap: 0.8em;
+  padding: 0.8em 1em;
+  border-radius: 18px;
+  background: #fff;
+  color: #1d1b16;
+  box-shadow: 0 8px 28px rgb(0 0 0 / 30%);
+  font-weight: 700;
+}
+
+.build-done > div {
+  flex: 1;
+}
+
+.build-done .link {
+  color: #1d1b16;
+}
+
+/* The start screen: dusk, with the windows coming on. Its colours stay here, not in :root, so a
+   city's own theme never has to compete with them. */
+.home {
+  --home-sky: #241a63;
+  --home-haze: #8c2f86;
+  --home-sun: #ff9a56;
+  --home-window: #ffd56b;
+  --home-action: #2bd98f;
+  --surface: #2f2478;
+  --ink: #fff8ec;
+  --muted: #d8cdf0;
+  --accent: #2bd98f;
+  --onAccent: #10233a;
+  --line: color-mix(in srgb, #fff 22%, transparent);
+  position: relative;
+  min-height: 100dvh;
+  color: var(--ink);
+  background: linear-gradient(
+    180deg,
+    var(--home-sky) 0%,
+    #4a2386 48%,
+    var(--home-haze) 76%,
+    var(--home-sun) 100%
+  );
+  background-attachment: fixed;
+  overflow-x: clip;
+}
+
+.skyline {
+  position: fixed;
+  inset: auto 0 0;
+  height: 34dvh;
+  display: flex;
+  align-items: flex-end;
+  gap: 3px;
+  pointer-events: none;
+}
+
+.tower {
+  flex: 1;
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 5px;
+  padding: 7px 6px;
+  background: #1b1450;
+  aspect-ratio: 1 / 2;
+  max-height: 100%;
+}
+
+.tower:nth-child(3n) {
+  aspect-ratio: 1 / 1.3;
+}
+
+.tower:nth-child(5n + 1) {
+  aspect-ratio: 1 / 2.6;
+}
+
+.tower span {
+  background: #2c2271;
+  border-radius: 1px;
+}
+
+.tower .lit {
+  animation: window-on 0.3s steps(2) both;
+}
+
+@keyframes window-on {
+  from {
+    background: #2c2271;
+  }
+  to {
+    background: var(--home-window);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tower .lit {
+    animation: none;
+    background: var(--home-window);
+  }
+}
+
+.home-page {
+  position: relative;
+  max-width: 760px;
+  margin: 0 auto;
+  padding: calc(1em + var(--safe-t)) calc(1.1em + var(--safe-r)) calc(36dvh + var(--safe-b))
+    calc(1.1em + var(--safe-l));
+  display: grid;
+  gap: 1.8em;
+}
+
+.home-logo {
+  font-size: 1.5rem;
+  font-weight: 900;
+}
+
+.home-who {
+  color: var(--muted);
+}
+
+.home .link {
+  color: var(--ink);
+}
+
+.home-hero {
+  display: grid;
+  gap: 0.8em;
+}
+
+.home-hero h1 {
+  margin: 0;
+  font-size: clamp(2.8rem, 12vw, 5.4rem);
+  line-height: 0.98;
+  font-weight: 900;
+  letter-spacing: -0.02em;
+  text-wrap: balance;
+}
+
+.home-hero > p {
+  margin: 0;
+  font-size: 1.1rem;
+  color: var(--muted);
+  max-width: 34em;
+}
+
+.home-ways {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+  gap: 0.8em;
+  margin-top: 0.4em;
+}
+
+.home-way {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  column-gap: 0.7em;
+  text-align: left;
+  padding: 1em 1.1em;
+  border: 0;
+  border-radius: 20px;
+  color: #10233a;
+  background: var(--home-action);
+  box-shadow: 0 6px 0 #118a58;
+  cursor: pointer;
+  transition:
+    transform 80ms,
+    box-shadow 80ms;
+}
+
+.home-way + .home-way {
+  background: var(--home-window);
+  box-shadow: 0 6px 0 #c8912a;
+}
+
+.home-way:active {
+  transform: translateY(5px);
+  box-shadow: 0 1px 0 #118a58;
+}
+
+.home-way:focus-visible,
+.home-pick:focus-visible {
+  outline: 3px solid #fff;
+  outline-offset: 3px;
+}
+
+.home-way > span {
+  grid-row: span 2;
+  font-size: 1.9rem;
+  align-self: center;
+}
+
+.home-way strong {
+  font-size: 1.2rem;
+  font-weight: 900;
+}
+
+.home-way small {
+  font-size: 0.9rem;
+}
+
+.home-tray {
+  display: grid;
+  gap: 0.8em;
+  padding: 1.1em;
+  border-radius: 20px;
+  background: var(--surface);
+}
+
+.home-tray p {
+  margin: 0;
+}
+
+.home-tray textarea {
+  background: #fff;
+  color: #1d1b16;
+}
+
+.home-picks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5em;
+}
+
+.home-pick {
+  padding: 0.6em 1em;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: none;
+  color: var(--ink);
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.home-wait {
+  color: var(--muted);
+  font-size: 0.92rem;
+}
+
+.home-live {
+  color: var(--home-action);
+  font-weight: 800;
+  font-size: 0.92rem;
+}
+
+.home h2 {
+  margin: 0 0 0.6em;
+}
+
+.home .card h3 a {
+  color: inherit;
+}
+
+.home .auth {
+  width: min(460px, 100%);
+}
+
+.home .auth input {
+  background: #fff;
+  color: #1d1b16;
+}
+
+.home .tabs button[aria-selected="true"] {
+  background: var(--accent);
+  color: var(--onAccent);
 }

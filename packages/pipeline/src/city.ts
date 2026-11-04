@@ -21,6 +21,7 @@ import {
   type ArtifactHash,
   type ArtifactRef,
   type Block,
+  BUILDING_LINE_MAX,
   CITY_BOUNDS,
   CITY_SPEC_FORMAT,
   CitySpec,
@@ -68,7 +69,7 @@ const BILLS_MOST_HOURS_A_DAY = 4;
 const BILLS_LEAST_HOURS_A_DAY = 2;
 
 /** Bump when draft → spec compilation changes. */
-export const CITY_COMPILER_VERSION = 15;
+export const CITY_COMPILER_VERSION = 16;
 /** Bump when the critique's rules change. */
 export const CITY_CRITIQUE_VERSION = 14;
 
@@ -223,6 +224,10 @@ export function compileCity(args: {
       return [k, w || k];
     }),
   ) as Words;
+  const buildingLines = draft.buildingLines
+    .map((line) => cleanText(line, BUILDING_LINE_MAX))
+    .filter((line) => line.length > 0)
+    .slice(0, 6);
 
   const startOk = seen("start");
   const starts = draft.starts
@@ -526,6 +531,7 @@ export function compileCity(args: {
     marks,
     sun,
     words,
+    buildingLines,
     kinds,
     items,
     starts,
@@ -648,6 +654,7 @@ export function draftOfCity(city: CitySpec): CityDraft {
     sunrise: city.sun.rises,
     sunset: city.sun.sets,
     words: city.words,
+    buildingLines: city.buildingLines,
     ...draftOfKinds(city),
     starts: city.starts.map((s) => ({
       aim: s.aim

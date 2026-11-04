@@ -29,7 +29,7 @@ pnpm library:fetch            # the CC0 models and textures (about 25 MB, not in
 pnpm dev                      # web http://localhost:5173 · api http://127.0.0.1:8787 · worker
 ```
 
-Then open http://localhost:5173, sign up, and describe a city under **Make a city**. The
+Then open http://localhost:5173, sign up, and describe a place or a whole city. The
 worker designs and builds it (a few minutes; model answers are cached under `.aye/`, so
 rebuilding is free). When it opens, make a character and play. Open a second browser profile
 to play together. `MUSE_API_KEY` is required.

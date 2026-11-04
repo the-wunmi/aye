@@ -1,4 +1,5 @@
 /** Shapes the game client receives from the API, beyond those in @aye/schema. */
+
 import type { CitySpec, WorldSettings } from "@aye/schema";
 
 export interface CatalogAction {
@@ -40,4 +41,8 @@ export interface WorldSummary {
   owner: boolean;
   joined: boolean;
   madeAt: string;
+  /** What a model wrote for this point in the build. Display only. */
+  buildNote?: string | null;
+  /** How many people are in it right now. */
+  online?: number;
 }

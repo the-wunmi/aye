@@ -35,6 +35,7 @@ import {
   systemLinkWorldArtifacts,
   systemPinnedKeys,
   systemRecordArtifacts,
+  systemSetBuildNote,
   systemSetWorld,
 } from "@aye/db";
 import {
@@ -155,6 +156,12 @@ export async function runCityJob(raw: unknown, deps: CityJobDeps): Promise<CityJ
 async function buildCityJob(job: CityJob, deps: CityJobDeps): Promise<CityJobResult> {
   const step = deps.step ?? directStep;
   const index = new PgRecipeIndex(deps.db);
+  /** What the model wrote for someone to read while this builds. Code only says how far along. */
+  let lines: readonly string[] = [];
+  const tell = async (progress: number) => {
+    const line = lines[Math.min(progress, lines.length - 1)];
+    if (line) await systemSetBuildNote(deps.db, job.worldId, line);
+  };
   const looks = () => ({
     critic: deps.providers.critic,
     designer: deps.providers.designer,
@@ -218,6 +225,7 @@ async function buildCityJob(job: CityJob, deps: CityJobDeps): Promise<CityJobRes
   const grounded = async (spec: CitySpec): Promise<CitySpec> => {
     const { locator, maps } = deps.providers;
     if (!locator || !maps || spec.real) return spec;
+    await tell(1);
     try {
       const g = await groundCity(spec, {
         locator,
@@ -289,6 +297,10 @@ async function buildCityJob(job: CityJob, deps: CityJobDeps): Promise<CityJobRes
       // After its rounds of revising, what's left is polish unless nobody could live here.
       const stops = unplayable(result.spec);
       if (stops.length > 0) return { ref: null, reason: stops[0] as string };
+      // From here the person waiting can see what it's called, and read what it wrote for them.
+      lines = result.spec.buildingLines;
+      await tell(0);
+      await systemSetWorld(deps.db, job.worldId, { name: result.spec.name });
       // The outfits new arrivals choose from, then a real city onto its real roads, then who
       // lives there: a real city's people are written at its real size, knowing its districts
       // as they really are. Each step is optional: the sketch stands without it.
@@ -297,6 +309,7 @@ async function buildCityJob(job: CityJob, deps: CityJobDeps): Promise<CityJobRes
         ? ((await furnishCity(result.spec, f).catch(() => null))?.spec ?? result.spec)
         : result.spec;
       const real = await grounded(dressed);
+      await tell(2);
       const peopled = f ? ((await populateCity(real, f).catch(() => null))?.spec ?? real) : real;
       const specRef =
         peopled === result.spec
@@ -439,6 +452,8 @@ async function buildCityJob(job: CityJob, deps: CityJobDeps): Promise<CityJobRes
     .filter((p) => !p.private)
     .sort((a, b) => (firstHome ? distanceM(firstHome, a) - distanceM(firstHome, b) : 0))[0];
   const starters = placesOf(spec).filter((p) => homes.has(p.key) || p.key === nearest?.key);
+  lines = spec.buildingLines;
+  await tell(3);
   const results = await Promise.all(starters.map((p) => buildPlace(p, true)));
   const playable = (built: readonly string[]) =>
     [...homes].some((h) => built.includes(h)) &&

@@ -584,6 +584,12 @@ export const sampleCity: CitySpec = CitySpec.parse({
     notBuilt: "Still being built",
     day: "Day",
   },
+  buildingLines: [
+    "The first walls go up",
+    "The streets fill in",
+    "People start arriving",
+    "Nearly ready",
+  ],
   kinds: [
     {
       key: "district",

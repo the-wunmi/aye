@@ -10,6 +10,7 @@
  */
 import { useEffect, useRef, useState } from "react";
 import { api } from "../api.ts";
+import { askToNotify, notifyAway } from "./notify.ts";
 
 const STORE_KEY = (worldId: string) => `aye.filming.${worldId}`;
 const MAX_MINUTES = 3;
@@ -31,44 +32,72 @@ type Progress =
   | { state: "ready"; id: string; placeKey: string }
   | { state: "failed"; why: string };
 
-function upload(
+/** A video goes in pieces: hosts limit a single request, and a dropped line only costs one piece. */
+const PIECE_BYTES = 16 * 1024 * 1024;
+const PIECE_TRIES = 4;
+
+/** One request that shows its progress, because a video takes a while on a phone connection. */
+function send(
+  url: string,
+  body: Blob | string,
+  type: string,
+  onShare: (share: number) => void,
+): Promise<{ status: number; text: string }> {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open("POST", url);
+    xhr.setRequestHeader("content-type", type);
+    xhr.upload.onprogress = (e) => {
+      if (e.lengthComputable) onShare(e.loaded / e.total);
+    };
+    xhr.onload = () => resolve({ status: xhr.status, text: xhr.responseText });
+    xhr.onerror = () => reject(new Error("failed"));
+    xhr.send(body);
+  });
+}
+
+const problemOf = (status: number) =>
+  status === 413
+    ? "too_large"
+    : status === 429
+      ? "too_many"
+      : status === 400 || status === 415
+        ? "bad_file"
+        : "failed";
+
+async function upload(
   worldId: string,
   file: File,
   query: URLSearchParams,
   onShare: (share: number) => void,
 ): Promise<string> {
-  // Not fetch: a video takes a while on a phone connection, and people should see it going.
-  return new Promise((resolve, reject) => {
-    const xhr = new XMLHttpRequest();
-    xhr.open("POST", `/api/worlds/${encodeURIComponent(worldId)}/captures?${query}`);
-    xhr.setRequestHeader("content-type", file.type || "video/mp4");
-    xhr.upload.onprogress = (e) => {
-      if (e.lengthComputable) onShare(e.loaded / e.total);
-    };
-    xhr.onload = () => {
-      if (xhr.status !== 202) {
-        reject(
-          new Error(
-            xhr.status === 413
-              ? "too_large"
-              : xhr.status === 429
-                ? "too_many"
-                : xhr.status === 400 || xhr.status === 415
-                  ? "bad_file"
-                  : "failed",
-          ),
-        );
-        return;
-      }
+  const base = `/api/worlds/${encodeURIComponent(worldId)}/captures`;
+  const type = file.type || "video/mp4";
+  const id = crypto.randomUUID().replaceAll("-", "");
+  const pieces = Math.max(1, Math.ceil(file.size / PIECE_BYTES));
+  for (let index = 0; index < pieces; index++) {
+    const piece = file.slice(index * PIECE_BYTES, (index + 1) * PIECE_BYTES, type);
+    for (let attempt = 1; ; attempt++) {
       try {
-        resolve((JSON.parse(xhr.responseText) as { capture: { id: string } }).capture.id);
-      } catch {
-        reject(new Error("failed"));
+        const res = await send(`${base}/pieces?upload=${id}&index=${index}`, piece, type, (share) =>
+          onShare((index + share) / pieces),
+        );
+        if (res.status === 200) break;
+        if (res.status < 500 || attempt >= PIECE_TRIES) throw new Error(problemOf(res.status));
+      } catch (e) {
+        if ((e as Error).message !== "failed" || attempt >= PIECE_TRIES) throw e;
       }
-    };
-    xhr.onerror = () => reject(new Error("failed"));
-    xhr.send(file);
-  });
+      await new Promise((r) => setTimeout(r, 1000 * attempt));
+    }
+  }
+  query.set("upload", id);
+  const done = await send(`${base}?${query}`, "{}", "application/json", () => undefined);
+  if (done.status !== 202) throw new Error(problemOf(done.status));
+  try {
+    return (JSON.parse(done.text) as { capture: { id: string } }).capture.id;
+  } catch {
+    throw new Error("failed");
+  }
 }
 
 const UPLOAD_ERRORS: Record<string, string> = {
@@ -102,6 +131,7 @@ export function FilmPlace({
   cityName,
   spot,
   picking,
+  startOpen,
   onPick,
   onReady,
   onGo,
@@ -111,12 +141,14 @@ export function FilmPlace({
   /** The spot chosen on the map, metres; null: near where you are. */
   spot: [number, number] | null;
   picking: boolean;
+  /** They came here to film something, so it opens straight away. */
+  startOpen?: boolean;
   onPick(picking: boolean): void;
   /** It's in the city: fetch the city again so it's on the map. */
   onReady(): void;
   onGo(placeKey: string): void;
 }) {
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState(startOpen === true);
   const [file, setFile] = useState<File | null>(null);
   const [note, setNote] = useState("");
   const [problem, setProblem] = useState<string | null>(null);
@@ -143,9 +175,11 @@ export function FilmPlace({
       } else if (s.status === "ready" && s.placeKey) {
         localStorage.removeItem(STORE_KEY(worldId));
         setProgress({ state: "ready", id: buildingId, placeKey: s.placeKey });
+        void notifyAway(`film-${buildingId}`, "Ayé", "The place you filmed is ready.");
         ready.current();
       } else if (s.status === "failed") {
         localStorage.removeItem(STORE_KEY(worldId));
+        void notifyAway(`film-${buildingId}`, "Ayé", "We couldn't make a place from that video.");
         setProgress({
           state: "failed",
           why: "We couldn't make a place from that video. Try one that walks slowly around the room.",
@@ -179,6 +213,7 @@ export function FilmPlace({
   };
 
   const send = async () => {
+    askToNotify();
     if (!file) return;
     const query = new URLSearchParams({ durationMs: String(await durationOf(file)) });
     if (note.trim()) query.set("note", note.trim());
@@ -322,10 +357,6 @@ export function FilmPlace({
           ? "\u{1F4CD} Spot chosen. Change it"
           : "\u{1F4CD} Choose where on the map (or near you)"}
       </button>
-      <span className="muted small">
-        Faces and number plates are blurred. Other players only see the place made from your video,
-        never the video itself, and anyone in this city can visit it.
-      </span>
       {problem && (
         <span className="t-bad small" role="alert">
           {problem}

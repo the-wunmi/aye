@@ -683,6 +683,8 @@ export const CityDraft = z.strictObject({
   words: z.strictObject(
     Object.fromEntries(WORD_KEYS.map((k) => [k, Name])) as Record<WordKey, typeof Name>,
   ),
+  /** What someone waiting for this city reads, in order, as it's built. */
+  buildingLines: z.array(Line).max(6),
   /** The kinds of things this city is made of, each with the traits it has. */
   kinds: z.array(DraftCityKind).max(48),
   /** Everything on the map: items of those kinds, by kind name. */

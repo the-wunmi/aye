@@ -227,6 +227,8 @@ export function dayPhase(sun: Sun | undefined, minuteOfDay: number): number {
  * The few words the interface puts on screen around the model's own (a fare that costs
  * nothing, a place that's shut, someone between places), in the city's voice and language.
  */
+export const BUILDING_LINE_MAX = 80;
+
 export const WORD_KEYS = [
   /** Someone walking from one spot to another inside a place. */
   "walking",
@@ -436,6 +438,8 @@ export const CitySpec = z
     economy: Economy,
     sun: Sun,
     words: Words,
+    /** What someone waiting for this city reads, in order, as it's built. Display only. */
+    buildingLines: z.array(z.string().min(1).max(BUILDING_LINE_MAX)).max(6).default([]),
     /** The kinds of things this city is made of, with their traits. */
     kinds: z.array(Kind).min(1).max(KIND_BOUNDS.kinds),
     /** Everything on its map: items of those kinds. */

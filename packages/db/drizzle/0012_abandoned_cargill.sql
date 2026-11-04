@@ -1,0 +1,1 @@
+ALTER TABLE "worlds" DROP COLUMN "build_phase";

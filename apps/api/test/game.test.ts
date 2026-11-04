@@ -6,8 +6,10 @@
 
 import type { Server } from "node:http";
 import type { AddressInfo } from "node:net";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { encodeJson, hashJson, MemoryArtifactStore } from "@aye/artifacts";
+import { encodeJson, hashBytes, hashJson, MemoryArtifactStore } from "@aye/artifacts";
 import {
   connect,
   type Db,
@@ -53,6 +55,7 @@ import { contentLoader } from "../src/content.ts";
 import { loadEnv } from "../src/env.ts";
 import { cleanChat, Realm, SELF_CARE_AFTER_MS } from "../src/realm.ts";
 import { attachRealm } from "../src/realm-server.ts";
+import { VideoUploads } from "../src/uploads.ts";
 import { isSpeechWav, MAX_KEYWORDS, speechKeywords } from "../src/voice.ts";
 
 const url = process.env["DATABASE_URL"];
@@ -168,6 +171,10 @@ describe.skipIf(!url)("the game", () => {
             : { status: "working" as const },
       },
       onPlaceChanged: (world, place) => placesChanged.push(`${world}/${place}`),
+      uploads: new VideoUploads(
+        join(tmpdir(), `aye-uploads-${process.pid}-${Date.now()}`),
+        300 * 1024 * 1024,
+      ),
       removals: {
         enqueue: async (userId) => `remove-${userId}-abcdef12`,
         status: async (id) =>
@@ -713,6 +720,107 @@ describe.skipIf(!url)("the game", () => {
     const done = await call("alice", `/removals/remove-${await idOf("alice")}-donedone`);
     expect(await done.json()).toEqual({ status: "done", result: { ok: true } });
     expect(placesChanged.slice(before)).toEqual(["wld_gone/gone_place"]);
+  });
+
+  it("uploads name files only from plain ids, even if a route forgot to check", async () => {
+    const dir = join(tmpdir(), `aye-uploads-paths-${process.pid}`);
+    const u = new VideoUploads(dir, 1024);
+    const bytes = new Uint8Array(3);
+    const good = "abcdef0123456789";
+    await expect(u.piece("usr_a", "../../../etc/passwd", 0, bytes, "video/mp4")).rejects.toThrow();
+    await expect(u.piece("../usr_a", good, 0, bytes, "video/mp4")).rejects.toThrow();
+    await expect(u.take("usr_a", "../../secret")).rejects.toThrow();
+    await expect(u.take("usr_a/..", good)).rejects.toThrow();
+    expect(await u.piece("usr_a", good, 0, bytes, "video/mp4")).toBe("ok");
+  });
+
+  it("shows finished public cities to anyone, and nothing more about them", async () => {
+    const res = await call(null, "/open-cities");
+    expect(res.status).toBe(200);
+    const { cities } = (await res.json()) as { cities: Record<string, unknown>[] };
+    for (const city of cities) {
+      expect(Object.keys(city).sort()).toEqual(["description", "id", "name", "online"]);
+    }
+    expect(cities.some((c) => c["id"] === worldId)).toBe(true);
+    // A private city doesn't appear, even to someone signed in, and building ones don't either.
+    const hidden = await post("alice", "/worlds", {
+      description: "A private place nobody else should find listed",
+      visibility: "private",
+    });
+    const { world } = (await hidden.json()) as { world: { id: string } };
+    const again = (await (await call(null, "/open-cities")).json()) as {
+      cities: { id: string }[];
+    };
+    expect(again.cities.some((c) => c.id === world.id)).toBe(false);
+    // How long builds take is here for anyone waiting, once there's enough to say.
+    const list = (await (await call("alice", "/worlds")).json()) as {
+      worlds: { id: string; online: number; buildPhase: string | null }[];
+      typicalBuild: unknown;
+    };
+    expect(list.worlds.find((w) => w.id === worldId)?.online).toBe(0);
+    expect(list).toHaveProperty("typicalBuild");
+  });
+
+  it("a video can arrive in pieces, in order, and only its sender can finish it", async () => {
+    const piece = (
+      who: string | null,
+      upload: string,
+      index: number,
+      body: string | Uint8Array,
+      type = "video/mp4",
+    ) =>
+      call(who, `/worlds/${worldId}/captures/pieces?upload=${upload}&index=${index}`, {
+        method: "POST",
+        headers: { "content-type": type },
+        body,
+      });
+    const finish = (who: string | null, upload: string) =>
+      call(who, `/worlds/${worldId}/captures?upload=${upload}&note=in+pieces`, {
+        method: "POST",
+        body: "{}",
+      });
+    const id = "abcdef0123456789";
+    expect((await piece(null, id, 0, "aaa")).status).toBe(401);
+    expect((await piece("carol", id, 0, "aaa")).status).toBe(404);
+    expect((await piece("bob", "../../etc", 0, "aaa")).status).toBe(400);
+    expect((await piece("bob", id, -1, "aaa")).status).toBe(400);
+    expect((await piece("bob", id, 0, "aaa", "text/plain")).status).toBe(415);
+    expect((await piece("bob", id, 0, new Uint8Array(0))).status).toBe(400);
+    // JSON gets past the body check everywhere, but it isn't a video.
+    expect((await piece("bob", id, 0, "{}", "application/json")).status).toBe(415);
+    expect((await finish("bob", "notstartedyet000")).status).toBe(400);
+    const forged = await fetch(`${base}/worlds/${worldId}/captures/pieces?upload=${id}&index=0`, {
+      method: "POST",
+      headers: {
+        origin: "https://evil.example",
+        "content-type": "video/mp4",
+        cookie: cookies["bob"] as string,
+      },
+      body: "aaa",
+    });
+    expect(forged.status).toBe(403);
+    // In order, or not at all.
+    expect((await piece("bob", id, 1, "aaa")).status).toBe(409);
+    expect((await piece("bob", id, 0, "first-")).status).toBe(200);
+    // Sent twice because a line dropped: forgiven, and not added twice.
+    expect((await piece("bob", id, 0, "first-")).status).toBe(200);
+    expect((await piece("bob", id, 2, "aaa")).status).toBe(409);
+    expect((await piece("bob", id, 1, "second")).status).toBe(200);
+    // Too big a piece doesn't get read.
+    const big = new Uint8Array(17 * 1024 * 1024);
+    expect((await piece("bob", id, 2, big)).status).toBe(413);
+    // Someone else can't finish it, or take it.
+    expect((await finish("alice", id)).status).toBe(400);
+    expect((await finish("carol", id)).status).toBe(404);
+    expect((await finish(null, id)).status).toBe(401);
+    const before = captures.length;
+    const res = await finish("bob", id);
+    expect(res.status).toBe(202);
+    expect(captures).toHaveLength(before + 1);
+    const hash = hashBytes(new TextEncoder().encode("first-second"));
+    expect(await store.has(hash)).toBe(true);
+    // Once.
+    expect((await finish("bob", id)).status).toBe(400);
   });
 
   it("changing a home: only your own, and the plan itself stays with the server", async () => {

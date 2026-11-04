@@ -39,6 +39,7 @@ import {
   Handle,
   joinWorld,
   listMyThreads,
+  listOpenCities,
   listOwnedPlaceKeys,
   listOwnPlaces,
   listPinnedSpecs,
@@ -52,6 +53,7 @@ import {
   SESSION_DAYS,
   setWorldVisibility,
   tables,
+  typicalBuildMinutes,
   updatePlace,
 } from "@aye/db";
 import {
@@ -89,6 +91,7 @@ import { type Content, OutdatedContent } from "./content.ts";
 import type { Env } from "./env.ts";
 import { rateLimit } from "./rate-limit.ts";
 import { cleanChat } from "./realm.ts";
+import { UPLOAD_ID, UPLOAD_PIECE_BYTES, type VideoUploads } from "./uploads.ts";
 import { isSpeechWav, MAX_VOICE_BYTES, type Transcribe } from "./voice.ts";
 
 export interface AppDeps {
@@ -96,6 +99,10 @@ export interface AppDeps {
   db: Db;
   /** Someone signed out: end their live connections, which were only checked on opening. */
   onSignOut?: (userId: string) => void;
+  /** How many people are in a city right now. */
+  onlineIn?: (worldId: string) => number;
+  /** Videos arriving in pieces. */
+  uploads?: VideoUploads;
   /** A place just changed: rooms playing it should take it now. */
   onPlaceChanged?: (worldId: string, placeKey: string) => void;
   store: ArtifactStore;
@@ -269,7 +276,8 @@ const Credentials = z.strictObject({ handle: Handle, password: Password });
 /** What a video may be: the formats phones record. */
 const VIDEO_TYPES = new Set(["video/mp4", "video/quicktime", "video/webm"]);
 const MAX_VIDEO_BYTES = 300 * 1024 * 1024;
-const VIDEO_UPLOAD_PATH = /^\/worlds\/[^/]+\/captures$/;
+const VIDEO_UPLOAD_PATH = /^\/worlds\/[^/]+\/captures(\/pieces)?$/;
+const VIDEO_PIECE_PATH = /^\/worlds\/[^/]+\/captures\/pieces$/;
 
 /** The one kind of request whose body isn't JSON: a video to the route that takes them. */
 const isVideoUpload = (c: Context) =>
@@ -295,6 +303,13 @@ const CaptureQuery = z.strictObject({
   x: z.coerce.number().finite().optional(),
   z: z.coerce.number().finite().optional(),
   durationMs: z.coerce.number().int().min(0).max(3_600_000).default(0),
+  /** The pieces already sent for this, if it came that way. */
+  upload: z.string().regex(UPLOAD_ID).optional(),
+});
+
+const PieceQuery = z.strictObject({
+  upload: z.string().regex(UPLOAD_ID),
+  index: z.coerce.number().int().min(0).max(1_000),
 });
 
 /** How far (metres) a filmed place stands from the edge of anything already there. */
@@ -465,6 +480,8 @@ export function createApp({
   db,
   onSignOut,
   onPlaceChanged,
+  onlineIn,
+  uploads,
   store,
   content,
   enqueueCity,
@@ -501,9 +518,16 @@ export function createApp({
   const tooLarge = (c: Context) => c.json({ error: "payload_too_large" }, 413);
   const smallBody = bodyLimit({ maxSize: 1024 * 1024, onError: tooLarge });
   const videoBody = bodyLimit({ maxSize: MAX_VIDEO_BYTES, onError: tooLarge });
+  const pieceBody = bodyLimit({ maxSize: UPLOAD_PIECE_BYTES + 1024, onError: tooLarge });
   const voiceBody = bodyLimit({ maxSize: MAX_VOICE_BYTES, onError: tooLarge });
   app.use((c, next) =>
-    isVideoUpload(c) ? videoBody(c, next) : isVoice(c) ? voiceBody(c, next) : smallBody(c, next),
+    isVideoUpload(c)
+      ? VIDEO_PIECE_PATH.test(c.req.path)
+        ? pieceBody(c, next)
+        : videoBody(c, next)
+      : isVoice(c)
+        ? voiceBody(c, next)
+        : smallBody(c, next),
   );
 
   // Cross-site request forgery: anything that changes state must be JSON (which a form on
@@ -610,7 +634,22 @@ export function createApp({
 
   // ── Worlds (cities) ───────────────────────────────────────────────────────────────
 
-  app.get("/worlds", async (c) => c.json({ worlds: await listWorlds(db, c.get("actor")) }));
+  app.get("/worlds", async (c) => {
+    const [found, typical] = await Promise.all([
+      listWorlds(db, c.get("actor")),
+      typicalBuildMinutes(db),
+    ]);
+    return c.json({
+      worlds: found.map((w) => ({ ...w, online: onlineIn?.(w.id) ?? 0 })),
+      typicalBuild: typical,
+    });
+  });
+
+  /** What's open to walk into, for someone who hasn't signed up yet. */
+  app.get("/open-cities", async (c) => {
+    const open = await listOpenCities(db);
+    return c.json({ cities: open.map((w) => ({ ...w, online: onlineIn?.(w.id) ?? 0 })) });
+  });
 
   const createLimit = rateLimit({
     windowMs: 3_600_000,
@@ -972,6 +1011,31 @@ export function createApp({
     max: 12,
     key: (c) => `capture:${(c.get("actor") as { userId?: string }).userId ?? clientIp(c)}`,
   });
+  const pieceLimit = rateLimit({
+    windowMs: 60 * 60_000,
+    max: 600,
+    key: (c) => `piece:${(c.get("actor") as { userId?: string }).userId ?? clientIp(c)}`,
+  });
+  app.post("/worlds/:id/captures/pieces", pieceLimit, async (c) => {
+    const actor = user(c);
+    const id = parse(IdParam, c.req.param("id")) as WorldId;
+    const { upload, index } = parse(PieceQuery, c.req.query());
+    // Before reading a byte of it: only someone who plays here can send anything.
+    const world = await getWorld(db, actor, id);
+    const character = world && (await getMyCharacter(db, actor, id));
+    if (!world?.city || world.status !== "ready" || !character || !uploads) throw notFound();
+    const bytes = new Uint8Array(await c.req.arrayBuffer());
+    if (bytes.byteLength === 0) return c.json({ error: "empty_video" }, 400);
+    const mediaType = c.req.header("content-type")?.split(";")[0]?.trim() ?? "";
+    // JSON gets past the body check on every route, so being a video is checked here.
+    if (!VIDEO_TYPES.has(mediaType)) return c.json({ error: "not_video" }, 415);
+    const result = await uploads.piece(actor.userId, upload, index, bytes, mediaType);
+    if (result === "too_large") return c.json({ error: "too_large" }, 413);
+    if (result === "too_many") return c.json({ error: "too_many" }, 429);
+    if (result === "out_of_order") return c.json({ error: "out_of_order" }, 409);
+    return c.json({ ok: true });
+  });
+
   app.post("/worlds/:id/captures", captureLimit, async (c) => {
     const actor = user(c);
     const id = parse(IdParam, c.req.param("id")) as WorldId;
@@ -981,9 +1045,14 @@ export function createApp({
     const character = world && (await getMyCharacter(db, actor, id));
     if (!world?.city || world.status !== "ready" || !character) throw notFound();
     const city = await content.city(world.city);
-    const bytes = new Uint8Array(await c.req.arrayBuffer());
+    const whole = query.upload ? await uploads?.take(actor.userId, query.upload) : null;
+    if (query.upload && !whole) return c.json({ error: "no_upload" }, 400);
+    const sentAs = c.req.header("content-type")?.split(";")[0]?.trim() ?? "";
+    if (!whole && !VIDEO_TYPES.has(sentAs)) return c.json({ error: "not_video" }, 415);
+    const bytes = whole?.bytes ?? new Uint8Array(await c.req.arrayBuffer());
     if (bytes.byteLength === 0) return c.json({ error: "empty_video" }, 400);
-    const mediaType = c.req.header("content-type")?.split(";")[0]?.trim() as string;
+    const mediaType =
+      whole?.mediaType ?? (c.req.header("content-type")?.split(";")[0]?.trim() as string);
     const video = await store.put(bytes, mediaType);
     const place = await createPlace(db, actor, {
       id: randomId("place") as never,

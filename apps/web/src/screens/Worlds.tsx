@@ -1,15 +1,19 @@
 /**
- * Cities: the ones you made or joined, open ones anyone can join, and a box to describe a new
- * one in your own words. A new city is written and built by models in the background; this
- * shows its progress (the city first, then each place) until every place stands.
+ * The start screen: where do you want to live? Film somewhere real and it joins a city, or
+ * describe a place or a whole city and a model builds it around those words. Below that, the
+ * cities you can walk into now. Someone building a new one sees what it's doing and how long
+ * these usually take, measured from real builds.
  */
 import { placesOf } from "@aye/schema";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ApiError, api } from "../api.ts";
+import { type BuildRange, usualWait, waitNote } from "../game/build-time.ts";
+import { watchBuild } from "../game/build-watch.ts";
+import { askToNotify } from "../game/notify.ts";
 import type { CityBundle, WorldSummary } from "../game/types.ts";
+import { Skyline } from "./Skyline.tsx";
 
-const EXAMPLE =
-  "Lagos: the mainland and the island across the lagoon, buka food, danfo buses and okadas, Yaba tech hubs, markets and beaches, hustling to make rent.";
+const EXAMPLE = "A street, a shop, someone's home, or a whole city";
 
 interface Progress {
   built: number;
@@ -20,11 +24,15 @@ interface Progress {
 
 export function Worlds({
   handle,
+  notice,
   onPlay,
   onLogout,
 }: {
   handle: string;
-  onPlay(world: WorldSummary): void;
+  /** Why they're here and not where a link was taking them. */
+  notice?: string;
+  /** Into a city; if they came to film something, that opens as they arrive. */
+  onPlay(world: WorldSummary, film: boolean): void;
   onLogout(): void;
 }) {
   const [worlds, setWorlds] = useState<WorldSummary[] | null>(null);
@@ -33,16 +41,19 @@ export function Worlds({
   const [description, setDescription] = useState("");
   const [publicCity, setPublicCity] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [playError, setPlayError] = useState<string | null>(null);
+  const [playError, setPlayError] = useState<string | null>(notice ?? null);
   const [busy, setBusy] = useState(false);
+  const [way, setWay] = useState<"film" | "describe" | null>(null);
+  const [typical, setTypical] = useState<BuildRange | null>(null);
 
   /** What's known of each city, by world and city version: fetched once, not every tick. */
   const known = useRef(
     new Map<string, { city: string; total: number | null; outdated: boolean }>(),
   );
   const refresh = useCallback(async () => {
-    const res = await api<{ worlds: WorldSummary[] }>("/worlds");
+    const res = await api<{ worlds: WorldSummary[]; typicalBuild: BuildRange | null }>("/worlds");
     setWorlds(res.worlds);
+    setTypical(res.typicalBuild);
     let building = false;
     for (const w of res.worlds.filter((x) => x.owner && x.status !== "failed")) {
       const seen = known.current.get(w.id);
@@ -100,24 +111,27 @@ export function Worlds({
     setBusy(true);
     setError(null);
     try {
-      await api("/worlds", {
+      askToNotify();
+      const { world } = await api<{ world: { id: string } }>("/worlds", {
         description: description.trim(),
         visibility: publicCity ? "public" : "private",
       });
+      watchBuild(world.id);
       setDescription("");
+      setWay(null);
       setPolls((n) => n + 1);
     } catch (err) {
       setError(
         err instanceof ApiError && err.code === "rate_limited"
           ? "You've made a lot of cities this hour. Try again later."
-          : "Describe your city in a sentence or two (at least 10 characters).",
+          : "Describe it in a sentence or two (at least 10 characters).",
       );
     } finally {
       setBusy(false);
     }
   };
 
-  const play = async (w: WorldSummary) => {
+  const play = async (w: WorldSummary, film = false) => {
     setPlayError(null);
     if (!w.owner) await api(`/worlds/${w.id}/join`, {}).catch(() => null);
     // A city made by an older version of the game can't be played: say so, don't just sit there.
@@ -129,7 +143,7 @@ export function Worlds({
       setPlayError(`${w.name} was made with an older version of Ayé and can't be played any more.`);
       return;
     }
-    onPlay(w);
+    onPlay(w, film);
   };
 
   const remove = async (w: WorldSummary) => {
@@ -140,93 +154,152 @@ export function Worlds({
   const mine = worlds?.filter((w) => w.owner || w.joined) ?? [];
   const others = worlds?.filter((w) => !w.owner && !w.joined) ?? [];
 
-  return (
-    <div className="page">
-      <header className="page-head">
-        <h1 className="logo">Ayé</h1>
-        <span className="grow" />
-        <span className="muted">@{handle}</span>
-        <button type="button" className="link" onClick={onLogout}>
-          Log out
-        </button>
-      </header>
+  const ready = worlds?.filter((w) => w.status === "ready") ?? [];
 
-      <section className="panel">
-        <h2>Make a city</h2>
-        <p className="muted">
-          Describe any city or neighbourhood. A model designs it (its map, places, people, prices,
-          transport, even this game's interface), then builds every place in it. You can start
-          playing in about 15 minutes; the rest of its places follow.
-        </p>
-        <textarea
-          rows={3}
-          value={description}
-          maxLength={2000}
-          placeholder={EXAMPLE}
-          onChange={(e) => setDescription(e.target.value)}
-          aria-label="Describe your city"
-        />
-        <div className="row">
-          <label className="check">
-            <input
-              type="checkbox"
-              checked={publicCity}
-              onChange={(e) => setPublicCity(e.target.checked)}
-            />
-            Open to everyone when it's ready
-          </label>
+  return (
+    <div className="home">
+      <Skyline />
+      <div className="home-page">
+        <header className="page-head">
+          <span className="home-logo">Ayé</span>
           <span className="grow" />
-          <button
-            type="button"
-            className="primary"
-            disabled={busy || description.trim().length < 10}
-            onClick={create}
-          >
-            Build it
+          <span className="home-who">@{handle}</span>
+          <button type="button" className="link" onClick={onLogout}>
+            Log out
           </button>
-        </div>
-        {error && (
+        </header>
+
+        <section className="home-hero">
+          <h1>Where do you want to live?</h1>
+          <p>Somewhere real or somewhere you've imagined. Everyone here lives in it with you.</p>
+          <div className="home-ways">
+            <button
+              type="button"
+              className="home-way"
+              aria-expanded={way === "film"}
+              onClick={() => setWay(way === "film" ? null : "film")}
+            >
+              <span aria-hidden="true">🎥</span>
+              <strong>Film a place</strong>
+              <small>Walk around with your phone. It joins a city.</small>
+            </button>
+            <button
+              type="button"
+              className="home-way"
+              aria-expanded={way === "describe"}
+              onClick={() => setWay(way === "describe" ? null : "describe")}
+            >
+              <span aria-hidden="true">✏️</span>
+              <strong>Describe a place</strong>
+              <small>One spot or a whole city, in your own words.</small>
+            </button>
+          </div>
+
+          {way === "film" && (
+            <div className="home-tray">
+              {ready.length === 0 ? (
+                <p>
+                  There's no city to add it to yet. Describe one first, then film yours into it.
+                </p>
+              ) : (
+                <>
+                  <p>Which city should it join?</p>
+                  <div className="home-picks">
+                    {ready.map((w) => (
+                      <button
+                        type="button"
+                        className="home-pick"
+                        key={w.id}
+                        onClick={() => void play(w, true)}
+                      >
+                        {w.name}
+                      </button>
+                    ))}
+                  </div>
+                </>
+              )}
+            </div>
+          )}
+
+          {way === "describe" && (
+            <div className="home-tray">
+              <textarea
+                rows={3}
+                value={description}
+                maxLength={2000}
+                placeholder={EXAMPLE}
+                onChange={(e) => setDescription(e.target.value)}
+                aria-label="Describe the place"
+              />
+              <label className="check">
+                <input
+                  type="checkbox"
+                  checked={publicCity}
+                  onChange={(e) => setPublicCity(e.target.checked)}
+                />
+                Open to everyone when it's ready
+              </label>
+              <button
+                type="button"
+                className="primary"
+                disabled={busy || description.trim().length < 10}
+                onClick={create}
+              >
+                Build it
+              </button>
+              <p className="home-wait">
+                Usually {usualWait(typical)}. Keep playing or switch tabs, and we'll tell you when
+                it's ready.
+              </p>
+              {error && (
+                <div className="error" role="alert">
+                  {error}
+                </div>
+              )}
+            </div>
+          )}
+        </section>
+
+        {worlds === null && <p className="home-wait">Loading…</p>}
+        {playError && (
           <div className="error" role="alert">
-            {error}
+            {playError}
           </div>
         )}
-      </section>
-
-      {worlds === null && <p className="muted">Loading…</p>}
-      {playError && (
-        <div className="error" role="alert">
-          {playError}
-        </div>
-      )}
-      {mine.length > 0 && (
-        <section>
-          <h2>Your cities</h2>
-          <div className="cards">
-            {mine.map((w) => (
-              <CityCard
-                key={w.id}
-                w={w}
-                progress={progressView[w.id]}
-                onPlay={() => void play(w)}
-                {...(w.owner ? { onDelete: () => void remove(w) } : {})}
-              />
-            ))}
-          </div>
-        </section>
-      )}
-      {others.length > 0 && (
-        <section>
-          <h2>Open cities</h2>
-          <div className="cards">
-            {others.map((w) => (
-              <CityCard key={w.id} w={w} progress={undefined} onPlay={() => void play(w)} />
-            ))}
-          </div>
-        </section>
-      )}
-      {worlds !== null && worlds.length === 0 && (
-        <p className="muted">No cities yet. Describe one above to start.</p>
-      )}
+        {mine.length > 0 && (
+          <section>
+            <h2>Your cities</h2>
+            <div className="cards">
+              {mine.map((w) => (
+                <CityCard
+                  key={w.id}
+                  w={w}
+                  typical={typical}
+                  progress={progressView[w.id]}
+                  onPlay={() => void play(w)}
+                  {...(w.owner ? { onDelete: () => void remove(w) } : {})}
+                />
+              ))}
+            </div>
+          </section>
+        )}
+        {others.length > 0 && (
+          <section>
+            <h2>Open to walk into</h2>
+            <div className="cards">
+              {others.map((w) => (
+                <CityCard
+                  key={w.id}
+                  w={w}
+                  typical={typical}
+                  progress={undefined}
+                  onPlay={() => void play(w)}
+                />
+              ))}
+            </div>
+          </section>
+        )}
+      </div>
     </div>
   );
 }
@@ -286,13 +359,27 @@ function Making({ w }: { w: WorldSummary }) {
   );
 }
 
+function BuildingNote({ w, typical }: { w: WorldSummary; typical: BuildRange | null }) {
+  return (
+    <div className="building" role="status">
+      <span className="spinner" aria-hidden />
+      <div>
+        {w.buildNote && <div>{w.buildNote}</div>}
+        <div className="small">{waitNote(Date.parse(w.madeAt), Date.now(), typical)}</div>
+      </div>
+    </div>
+  );
+}
+
 function CityCard({
   w,
+  typical,
   progress,
   onPlay,
   onDelete,
 }: {
   w: WorldSummary;
+  typical: BuildRange | null;
   progress: Progress | undefined;
   onPlay(): void;
   /** Yours only: delete it, after asking. */
@@ -301,14 +388,10 @@ function CityCard({
   return (
     <div className="card">
       <h3>{w.name}</h3>
+      {(w.online ?? 0) > 0 && <div className="home-live">{w.online} here now</div>}
       <p className="muted small clamp">{w.description}</p>
       {w.status === "building" ? (
-        <div className="building" role="status">
-          <span className="spinner" aria-hidden />
-          {!w.city
-            ? "Designing the city…"
-            : `Building places: ${progress?.built ?? 0}${progress?.total ? ` of ${progress.total}` : ""}`}
-        </div>
+        <BuildingNote w={w} typical={typical} />
       ) : w.status === "failed" ? (
         <div className="error">This city couldn't be built.</div>
       ) : progress?.outdated ? (

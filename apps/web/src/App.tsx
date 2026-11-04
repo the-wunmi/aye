@@ -5,7 +5,9 @@
 import type { Character } from "@aye/schema";
 import { useEffect, useState } from "react";
 import { ApiError, api } from "./api.ts";
+import { doneLine, useBuildWatch } from "./game/build-watch.ts";
 import type { CityBundle, WorldSummary } from "./game/types.ts";
+import { parseRoute, pathOf, type Route } from "./route.ts";
 import { Auth } from "./screens/Auth.tsx";
 import { Crashed } from "./screens/Crashed.tsx";
 import { CreateCharacter } from "./screens/CreateCharacter.tsx";
@@ -16,13 +18,28 @@ import { applyTheme } from "./theme.ts";
 type Screen =
   | { at: "loading" }
   | { at: "auth" }
-  | { at: "worlds"; handle: string }
-  | { at: "entering"; handle: string; world: WorldSummary }
-  | { at: "create"; handle: string; world: WorldSummary; bundle: CityBundle }
-  | { at: "play"; handle: string; world: WorldSummary; bundle: CityBundle; character: Character };
+  | { at: "worlds"; handle: string; notice?: string }
+  | { at: "opening"; handle: string; route: Route }
+  | { at: "entering"; handle: string; world: WorldSummary; film?: boolean; place?: string | null }
+  | {
+      at: "create";
+      handle: string;
+      world: WorldSummary;
+      bundle: CityBundle;
+      film?: boolean;
+      place?: string | null;
+    }
+  | {
+      at: "play";
+      handle: string;
+      world: WorldSummary;
+      bundle: CityBundle;
+      character: Character;
+      film?: boolean;
+      place?: string | null;
+    };
 
-/** The city this tab is playing, so a reload comes back to it. */
-const LAST_CITY = "aye:last-city";
+const LINK_TROUBLE = "That link isn't open to you, or the city isn't ready yet.";
 
 export function App() {
   const [screen, setScreen] = useState<Screen>({ at: "loading" });
@@ -32,18 +49,13 @@ export function App() {
     let stop = false;
     const check = (wait: number) => {
       api<{ handle: string }>("/me")
-        .then(async (me) => {
-          // A reload puts you back where you were, not on the list of cities.
-          const last = sessionStorage.getItem(LAST_CITY);
-          const world = last
-            ? await api<{ worlds: WorldSummary[] }>("/worlds")
-                .then((r) => r.worlds.find((w) => w.id === last))
-                .catch(() => undefined)
-            : undefined;
+        .then((me) => {
           if (stop) return;
+          // Wherever the address says: a link, or the same spot again after a reload.
+          const route = parseRoute(location.pathname);
           setScreen(
-            world
-              ? { at: "entering", handle: me.handle, world }
+            route
+              ? { at: "opening", handle: me.handle, route }
               : { at: "worlds", handle: me.handle },
           );
         })
@@ -59,10 +71,22 @@ export function App() {
     };
   }, []);
 
+  // The address follows where you are, and the back button follows the address. Signed out, it
+  // stays as it is, so a link still goes where it said once they're in.
+  const worldShown = screen.at === "play" ? screen.world.id : null;
+  const atList = screen.at === "worlds";
   useEffect(() => {
-    if (screen.at === "play") sessionStorage.setItem(LAST_CITY, screen.world.id);
-    else if (screen.at === "worlds" || screen.at === "auth") sessionStorage.removeItem(LAST_CITY);
-  }, [screen]);
+    if (worldShown && parseRoute(location.pathname)?.world !== worldShown) {
+      history.pushState(null, "", pathOf(worldShown));
+    } else if (atList && location.pathname !== "/") {
+      history.pushState(null, "", "/");
+    }
+  }, [worldShown, atList]);
+  useEffect(() => {
+    const moved = () => location.reload();
+    window.addEventListener("popstate", moved);
+    return () => window.removeEventListener("popstate", moved);
+  }, []);
 
   useEffect(() => {
     const inCity = screen.at === "create" || screen.at === "play";
@@ -71,8 +95,23 @@ export function App() {
   }, [screen]);
 
   useEffect(() => {
+    if (screen.at !== "opening") return;
+    const { handle, route } = screen;
+    void (async () => {
+      const { world } = await api<{ world: WorldSummary & { role: string | null } }>(
+        `/worlds/${route.world}`,
+      );
+      // The same as pressing Play on an open city; a private one refuses, and says nothing more.
+      if (!world.role) await api(`/worlds/${route.world}/join`, {});
+      setScreen({ at: "entering", handle, world, place: route.place });
+    })().catch(() => setScreen({ at: "worlds", handle, notice: LINK_TROUBLE }));
+  }, [screen]);
+
+  useEffect(() => {
     if (screen.at !== "entering") return;
     const { handle, world } = screen;
+    const film = screen.film === true;
+    const place = screen.place ?? null;
     void (async () => {
       const bundle = await api<CityBundle>(`/worlds/${world.id}/city`);
       const { character } = await api<{ character: Character | null }>(
@@ -80,57 +119,106 @@ export function App() {
       );
       setScreen(
         character
-          ? { at: "play", handle, world, bundle, character }
-          : { at: "create", handle, world, bundle },
+          ? { at: "play", handle, world, bundle, character, film, place }
+          : { at: "create", handle, world, bundle, film, place },
       );
-    })().catch(() => setScreen({ at: "worlds", handle }));
+    })().catch(() => setScreen({ at: "worlds", handle, notice: LINK_TROUBLE }));
   }, [screen]);
 
-  switch (screen.at) {
-    case "loading":
-    case "entering":
-      return (
-        <div className="center-screen">
-          <span className="spinner" role="status" aria-label="Loading" />
-        </div>
-      );
-    case "auth":
-      return <Auth onIn={(handle) => setScreen({ at: "worlds", handle })} />;
-    case "worlds":
-      return (
-        <Worlds
-          handle={screen.handle}
-          onPlay={(world) => setScreen({ at: "entering", handle: screen.handle, world })}
-          onLogout={() => {
-            void api("/auth/logout", {}).finally(() => setScreen({ at: "auth" }));
+  const signedIn = screen.at !== "loading" && screen.at !== "auth";
+  const { finished, dismiss } = useBuildWatch(signedIn);
+  const inGame = screen.at === "play" || screen.at === "create";
+  const banner = finished.length > 0 && (
+    <div className="build-done" role="status">
+      <div>
+        {finished.map((w) => (
+          <div key={w.id}>{doneLine(w)}</div>
+        ))}
+      </div>
+      {!inGame && finished.at(-1)?.status === "ready" && "handle" in screen && (
+        <button
+          type="button"
+          className="primary"
+          onClick={() => {
+            const world = finished.at(-1) as WorldSummary;
+            dismiss();
+            setScreen({ at: "entering", handle: screen.handle, world });
           }}
-        />
-      );
-    case "create":
-      return (
-        <CreateCharacter
-          worldId={screen.world.id}
-          bundle={screen.bundle}
-          onCreated={(character) => setScreen({ ...screen, at: "play", character })}
-          onBack={() => setScreen({ at: "worlds", handle: screen.handle })}
-        />
-      );
-    case "play": {
-      const { handle } = screen;
-      const leave = () => setScreen({ at: "worlds", handle });
-      const signedOut = () => setScreen({ at: "auth" });
-      return (
-        <Crashed key={screen.world.id} onBack={leave}>
-          <Game
+        >
+          Play
+        </button>
+      )}
+      <button type="button" className="link" onClick={dismiss}>
+        Dismiss
+      </button>
+    </div>
+  );
+
+  const view = (() => {
+    switch (screen.at) {
+      case "loading":
+      case "entering":
+        return (
+          <div className="center-screen">
+            <span className="spinner" role="status" aria-label="Loading" />
+          </div>
+        );
+      case "auth":
+        return (
+          <Auth
+            onIn={(handle) => {
+              const route = parseRoute(location.pathname);
+              setScreen(route ? { at: "opening", handle, route } : { at: "worlds", handle });
+            }}
+          />
+        );
+      case "worlds":
+        return (
+          <Worlds
+            handle={screen.handle}
+            onPlay={(world, film) =>
+              setScreen({ at: "entering", handle: screen.handle, world, film })
+            }
+            onLogout={() => {
+              void api("/auth/logout", {}).finally(() => setScreen({ at: "auth" }));
+            }}
+          />
+        );
+      case "create":
+        return (
+          <CreateCharacter
             worldId={screen.world.id}
             bundle={screen.bundle}
-            character={screen.character}
-            handle={screen.handle}
-            onLeave={leave}
-            onSignedOut={signedOut}
+            onCreated={(character) => setScreen({ ...screen, at: "play", character })}
+            onBack={() => setScreen({ at: "worlds", handle: screen.handle })}
           />
-        </Crashed>
-      );
+        );
+      case "play": {
+        const { handle } = screen;
+        const leave = () => setScreen({ at: "worlds", handle });
+        const signedOut = () => setScreen({ at: "auth" });
+        return (
+          <Crashed key={screen.world.id} onBack={leave}>
+            <Game
+              worldId={screen.world.id}
+              bundle={screen.bundle}
+              character={screen.character}
+              handle={screen.handle}
+              startFilming={screen.film === true}
+              openPlace={screen.place ?? null}
+              onLeave={leave}
+              onSignedOut={signedOut}
+            />
+          </Crashed>
+        );
+      }
     }
-  }
+  })();
+
+  return (
+    <>
+      {view}
+      {banner}
+    </>
+  );
 }

@@ -3,7 +3,10 @@
  * the HTTP app and the realm, and stops them in order on a signal. Jobs are only enqueued from
  * here; the worker runs them and holds the model keys, voice transcription aside.
  */
+
+import { rm } from "node:fs/promises";
 import type { Server } from "node:http";
+import { join } from "node:path";
 import { FsArtifactStore } from "@aye/artifacts/node";
 import { connect } from "@aye/db";
 import {
@@ -29,6 +32,7 @@ import { contentLoader } from "./content.ts";
 import { loadEnv } from "./env.ts";
 import { Realm } from "./realm.ts";
 import { attachRealm } from "./realm-server.ts";
+import { VideoUploads } from "./uploads.ts";
 import { museTranscribe } from "./voice.ts";
 
 const env = loadEnv();
@@ -39,10 +43,15 @@ const queue = await DBOSClient.create({
   systemDatabaseUrl: env.DATABASE_URL,
   systemDatabaseSchemaName: "dbos",
 });
+// Uploads don't survive a restart: their pieces would otherwise sit on the disk for good.
+const uploadsDir = join(env.AYE_ARTIFACT_DIR, ".uploads");
+await rm(uploadsDir, { recursive: true, force: true });
 const app = createApp({
   env,
   db,
+  uploads: new VideoUploads(uploadsDir, 300 * 1024 * 1024),
   onSignOut: (userId) => realm.signedOut(userId),
+  onlineIn: (worldId) => realm.online(worldId),
   onPlaceChanged: (worldId, placeKey) => realm.placeChanged(worldId, placeKey),
   store,
   content,

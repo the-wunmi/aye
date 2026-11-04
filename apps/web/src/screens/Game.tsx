@@ -34,6 +34,7 @@ import { useGame } from "../game/useGame.ts";
 import { useLand, useNetwork } from "../game/useNetwork.ts";
 import { usePlan } from "../game/usePlan.ts";
 import { whyNot } from "../game/why-not.ts";
+import { pathOf } from "../route.ts";
 
 type AskStatus =
   | { status: "working" }
@@ -61,6 +62,8 @@ export function Game({
   bundle: initial,
   character,
   handle,
+  startFilming,
+  openPlace,
   onLeave,
   onSignedOut,
 }: {
@@ -68,6 +71,10 @@ export function Game({
   bundle: CityBundle;
   character: Character;
   handle: string;
+  /** They came here to film something: open that straight away. */
+  startFilming?: boolean;
+  /** A link named somewhere: show it, and they go there the usual way if they want to. */
+  openPlace?: string | null;
   onLeave(): void;
   /** The session ended (logged out in another tab): nothing here can work any more. */
   onSignedOut(): void;
@@ -85,14 +92,24 @@ export function Game({
   const { city } = bundle;
   const game = useGame(worldId, city.currency, handle);
   const { state, send } = game;
-  const [view, setView] = useState<"map" | "place">("place");
-  const [sheet, setSheet] = useState<string | null>(null);
+  /** The place a link named, if it's somewhere they could see and they aren't already there. */
+  const linked = (() => {
+    const home = initial.city.starts.find((s) => s.key === character.start)?.home ?? null;
+    const at = placesOf(initial.city).find((p) => p.key === openPlace);
+    if (!at || (at.private && at.key !== home)) return null;
+    return at.key === (character.place ?? home) ? null : at.key;
+  })();
+  const [view, setView] = useState<"map" | "place">(linked ? "map" : "place");
+  const [sheet, setSheet] = useState<string | null>(linked);
   const [panel, setPanel] = useState<{ key: string; app: string | null } | null>(null);
   const panels = city.ui.panels;
   // Someone whose money has moved has lived here already, whatever this browser remembers.
   const returning =
     character.person.money !== city.starts.find((s) => s.key === character.start)?.money;
-  const [tour, setTour] = useState<number | null>(seenTour(worldId) || returning ? null : 0);
+  const [tour, setTour] = useState<number | null>(
+    // Someone who came to film gets on with that; the welcome waits for their next visit.
+    seenTour(worldId) || returning || startFilming ? null : 0,
+  );
   const [backend, setBackend] = useState("");
   const [follow, setFollow] = useState(true);
   const [lifeOn, setLifeOn] = useState(true);
@@ -131,8 +148,19 @@ export function Game({
 
   // Arriving somewhere shows it.
   const placeKey = state.place?.key ?? null;
+  // The address says what you're looking at, so it can be shared and a reload lands there.
+  const shownPlace = sheet ?? (view === "place" ? placeKey : null);
+  useEffect(() => {
+    if (placeKey || shownPlace) history.replaceState(null, "", pathOf(worldId, shownPlace));
+  }, [placeKey, shownPlace, worldId]);
+  /** Coming in by a link, the first arrival is only where they already were: the link stays up. */
+  const arrivedByLink = useRef(linked !== null);
   useEffect(() => {
     if (placeKey) {
+      if (arrivedByLink.current) {
+        arrivedByLink.current = false;
+        return;
+      }
       setView("place");
       setSheet(null);
     }
@@ -795,6 +823,7 @@ export function Game({
       <Hud
         layout={view === "place" && state.place ? city.ui.place : city.ui.map}
         ctx={hud}
+        toolsOpen={startFilming === true}
         extras={{
           top_left: (
             <button
@@ -816,6 +845,7 @@ export function Game({
               worldId={worldId}
               cityName={city.name}
               spot={filmSpot}
+              startOpen={startFilming === true}
               picking={pickingSpot}
               onPick={(on) => {
                 setPickingSpot(on);

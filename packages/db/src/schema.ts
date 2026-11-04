@@ -215,6 +215,10 @@ export const worlds = pgTable(
     /** What the owner asked for, in their words. Display only. */
     description: text("description").notNull().default(""),
     settings: jsonb("settings").$type<WorldSettings>().notNull(),
+    /** The line a model wrote for this point in its first build, for whoever's waiting. */
+    buildNote: text("build_note"),
+    /** When people could first go in: how long builds really take comes from this. */
+    readyAt: timestamp("ready_at", { withTimezone: true }),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },

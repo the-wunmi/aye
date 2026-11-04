@@ -69,6 +69,8 @@ export interface WorldSummary {
   joined: boolean;
   /** When it was made: same-named cities need telling apart. */
   madeAt: string;
+  /** What a model wrote for this point in its first build. Display only. */
+  buildNote: string | null;
 }
 
 function toSummary(
@@ -86,6 +88,7 @@ function toSummary(
     owner: row.ownerId === uid,
     joined,
     madeAt: row.createdAt.toISOString(),
+    buildNote: row.buildNote,
   };
 }
 
@@ -114,6 +117,8 @@ export async function createWorld(
 }
 
 /** Worlds you belong to and public ready ones, newest first. */
+const MIN_BUILDS_FOR_TYPICAL = 3;
+
 export async function listWorlds(db: Db, actor: Actor, limit = 50): Promise<WorldSummary[]> {
   const uid = uidOf(actor);
   if (uid === null) return [];
@@ -129,6 +134,38 @@ export async function listWorlds(db: Db, actor: Actor, limit = 50): Promise<Worl
     .where(eq(worldMembers.userId, uid));
   const joined = new Set(mine.map((m) => m.worldId));
   return rows.map((r) => toSummary(r, uid, joined.has(r.id)));
+}
+
+/**
+ * Finished cities anyone may see, for people who haven't signed up yet. It's only what a public
+ * city already shows its visitors, and nothing about who made it.
+ */
+export async function listOpenCities(db: Db, limit = 12) {
+  return db
+    .select({ id: worlds.id, name: worlds.name, description: worlds.description })
+    .from(worlds)
+    .where(and(eq(worlds.visibility, "public"), eq(worlds.status, "ready")))
+    .orderBy(desc(worlds.createdAt))
+    .limit(Math.min(limit, 50));
+}
+
+/** How long recent first builds took, in minutes, once there are enough to go on. */
+export async function typicalBuildMinutes(
+  db: Db,
+): Promise<{ lowMin: number; highMin: number } | null> {
+  const rows = await db.execute(
+    sql`select count(*)::int as n,
+          percentile_cont(0.5) within group (order by m) as low,
+          percentile_cont(0.9) within group (order by m) as high
+        from (
+          select extract(epoch from ready_at - created_at) / 60 as m
+          from worlds where ready_at is not null
+          order by created_at desc limit 30
+        ) recent`,
+  );
+  const row = (rows as unknown as { n: number; low: number | null; high: number | null }[])[0];
+  if (!row || row.n < MIN_BUILDS_FOR_TYPICAL || row.low === null || row.high === null) return null;
+  return { lowMin: Math.round(row.low), highMin: Math.ceil(row.high) };
 }
 
 export interface WorldDetail extends WorldSummary {
@@ -478,8 +515,22 @@ export async function systemSetWorld(
 ): Promise<void> {
   await db
     .update(worlds)
-    .set({ ...patch, updatedAt: new Date() })
+    .set({
+      ...patch,
+      updatedAt: new Date(),
+      // Only the first time: later passes finish the same city, and that's not how long it took.
+      ...(patch.status === "ready" ? { readyAt: sql`coalesce(${worlds.readyAt}, now())` } : {}),
+    })
     .where(eq(worlds.id, id));
+}
+
+/** A line for whoever's waiting. It's only ever a note, so it can't fail a build. */
+export async function systemSetBuildNote(db: Db, id: string, buildNote: string): Promise<void> {
+  await db
+    .update(worlds)
+    .set({ buildNote })
+    .where(eq(worlds.id, id))
+    .catch(() => undefined);
 }
 
 /** A build that crashed: fail the world only if it never opened, in the same statement. */

@@ -40,6 +40,19 @@ describe("compiling a city", () => {
     expect(spec).toEqual({ ...sampleCity, brief: briefHash });
   });
 
+  it("keeps the lines someone reads while waiting clean, short and few", () => {
+    const draft = draftOfCity(sampleCity);
+    expect(draft.buildingLines).toEqual(sampleCity.buildingLines);
+    const RLO = String.fromCodePoint(0x202e);
+    const { spec } = compile({
+      ...draft,
+      buildingLines: [`  Hello${RLO} there  `, "   ", "x".repeat(300)],
+    });
+    expect(spec?.buildingLines[0]).toBe("Hello there");
+    expect(spec?.buildingLines).toHaveLength(2);
+    expect(spec?.buildingLines[1]?.length).toBeLessThanOrEqual(80);
+  });
+
   it("derives keys from names and maps references through them", () => {
     const draft = draftOfCity(sampleCity);
     editItem(draft, "Mama's spot", (i) => ({ ...i, name: "Mama Put!" }));
