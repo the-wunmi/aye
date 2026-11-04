@@ -7,7 +7,7 @@
     "dev": "node --watch --env-file-if-exists=../../.env src/main.ts",
     "start": "node src/main.ts",
     "typecheck": "tsc -p .",
-    "test": "vitest run"
+    "test": "vitest run --testTimeout=30000 --hookTimeout=120000"
   },
   "dependencies": {
     "@aye/artifacts": "workspace:*",

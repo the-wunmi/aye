@@ -610,10 +610,11 @@ export class Realm {
       });
     // Walking into an empty place: no one to greet them. Speaking in one: the place may answer.
     if (present.length === 0 && arrived) return;
-    if (!(await this.#mayReply(player))) return;
-    if (arrived) room.greeted.set(uid, now);
+    // Taken before anything waits, so nothing else can start a reply in this room meanwhile.
     room.replying = true;
     try {
+      if (!(await this.#mayReply(player))) return;
+      if (arrived) room.greeted.set(uid, now);
       const reply = await replies({
         worldId: room.worldId,
         placeKey: room.placeKey,
@@ -705,6 +706,17 @@ export class Realm {
     return !(await isGuest(this.#deps.db, userId)) || this.#guestBudget.take(userId);
   }
 
+  /**
+   * Talk nobody asked for is free with an account in the room. With only guests there it comes
+   * from its own allowance, so it never uses up what guests have for being answered.
+   */
+  async #mayOverhear(room: Room): Promise<boolean> {
+    for (const p of room.players) {
+      if (!p.closed && !(await isGuest(this.#deps.db, p.actor.userId))) return true;
+    }
+    return this.#guestBudget.takeOverheard();
+  }
+
   /** What comes after someone's first words: they go and do what they said, and others join in. */
   async #carryOn(
     room: Room,
@@ -751,7 +763,6 @@ export class Realm {
     const replies = this.#deps.replies;
     const listener = [...room.players].find((p) => !p.closed && !p.selfCare);
     if (!replies || !listener || room.replying) return;
-    if (!(await this.#mayReply(listener))) return;
     const players = new Set([...room.characters.keys(), ...room.held.keys()]);
     const present = room.spec.people
       .map((p) => p.key)
@@ -759,9 +770,11 @@ export class Realm {
         const i = room.sim.slotOf(k);
         return i >= 0 && room.sim.present[i] === 1 && !players.has(k);
       });
+    // Nobody to talk means no model call, so nothing is spent.
     if (present.length < 2) return;
     room.replying = true;
     try {
+      if (!(await this.#mayOverhear(room))) return;
       const reply = await replies({
         worldId: room.worldId,
         placeKey: room.placeKey,

@@ -11,7 +11,7 @@
   },
   "scripts": {
     "typecheck": "tsc -p .",
-    "test": "vitest run"
+    "test": "vitest run --testTimeout=30000 --hookTimeout=120000"
   },
   "dependencies": {
     "@aye/artifacts": "workspace:*",

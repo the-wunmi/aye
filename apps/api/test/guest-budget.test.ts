@@ -21,6 +21,14 @@ describe("what guests may spend on replies", () => {
     ]);
   });
 
+  it("keeps people talking among themselves from using up guests' answers", () => {
+    const budget = new GuestBudget(() => 0, 5, 1, 2);
+    expect(budget.takeOverheard()).toBe(true);
+    expect(budget.takeOverheard()).toBe(true);
+    expect(budget.takeOverheard()).toBe(false);
+    expect(budget.take("a")).toBe(true);
+  });
+
   it("starts again after an hour", () => {
     let now = 0;
     const budget = new GuestBudget(() => now, 1, 100);

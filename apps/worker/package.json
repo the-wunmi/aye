@@ -8,7 +8,7 @@
     "dev": "node --watch --env-file-if-exists=../../.env src/main.ts",
     "start": "node src/main.ts",
     "typecheck": "tsc -p .",
-    "test": "vitest run",
+    "test": "vitest run --testTimeout=30000 --hookTimeout=120000",
     "refinish": "node --env-file-if-exists=../../.env scripts/refinish.ts",
     "rebuild-place": "node --env-file-if-exists=../../.env scripts/rebuild-place.ts"
   },

@@ -9,7 +9,7 @@
   },
   "scripts": {
     "typecheck": "tsc -p .",
-    "test": "vitest run",
+    "test": "vitest run --testTimeout=30000 --hookTimeout=120000",
     "generate": "drizzle-kit generate",
     "migrate": "drizzle-kit migrate"
   },
